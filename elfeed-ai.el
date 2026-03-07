@@ -108,28 +108,18 @@ Longer content is truncated."
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-backend nil
-  "gptel backend for AI scoring, or nil to use `gptel-backend'.
-The value should be a backend object created with one of the
-`gptel-make-*' functions, e.g.:
-
-  (setq elfeed-ai-backend
-        (gptel-make-anthropic \"Claude\"
-          :key \\='gptel-api-key :stream t))
-
-If you set this, you should normally also set `elfeed-ai-model'
-to a model registered in this backend; otherwise gptel will fall
-back to the first model in the backend's model list."
+  "gptel backend name for AI scoring, or nil to use `gptel-backend'.
+This is a string matching a registered gptel backend name, e.g.
+\"Gemini\" or \"Claude\".  When nil and `elfeed-ai-model' is set,
+the backend is inferred from the model."
   :type '(choice (const :tag "Use gptel default" nil)
-                 (sexp :tag "gptel backend object"))
+                 (string :tag "Backend name"))
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-model nil
   "gptel model for AI scoring, or nil to use `gptel-model'.
-The value should be a symbol naming a model registered in the
-active backend (either `elfeed-ai-backend' or `gptel-backend'),
-e.g. `claude-sonnet-4-5-20250514'.  If the model is not found in
-the backend's model list, gptel falls back to the backend's first
-available model."
+A symbol such as `claude-sonnet-4-5-20250514'.  When set without
+`elfeed-ai-backend', the backend is inferred automatically."
   :type '(choice (const :tag "Use gptel default" nil)
                  (symbol :tag "Model name"))
   :group 'elfeed-ai)
@@ -138,6 +128,28 @@ available model."
   "When non-nil, automatically score new entries as they arrive."
   :type 'boolean
   :group 'elfeed-ai)
+
+;;;; Option resolution
+
+(defun elfeed-ai--find-backend-for-model (model)
+  "Return the gptel backend that offers MODEL, or nil."
+  (cl-loop for (_name . backend) in gptel--known-backends
+           when (member model (gptel-backend-models backend))
+           return backend))
+
+(defun elfeed-ai--resolve-backend-and-model ()
+  "Return (backend . model) for AI scoring.
+Resolves `elfeed-ai-backend' and `elfeed-ai-model', inferring the
+backend from the model when needed."
+  (let* ((model (or elfeed-ai-model gptel-model))
+         (backend (cond
+                   (elfeed-ai-backend
+                    (gptel-get-backend elfeed-ai-backend))
+                   (elfeed-ai-model
+                    (or (elfeed-ai--find-backend-for-model elfeed-ai-model)
+                        gptel-backend))
+                   (t gptel-backend))))
+    (cons backend model)))
 
 ;;;; Profile resolution
 
@@ -369,8 +381,9 @@ CALLBACK is called with (score . summary) on success, or nil."
    (t
     (let* ((prompt (elfeed-ai--build-prompt entry))
            (prompt-tokens (elfeed-ai--estimate-tokens prompt))
-           (gptel-backend (or elfeed-ai-backend gptel-backend))
-           (gptel-model (or elfeed-ai-model gptel-model)))
+           (resolved (elfeed-ai--resolve-backend-and-model))
+           (gptel-backend (car resolved))
+           (gptel-model (cdr resolved)))
       (gptel-request prompt
         :callback (lambda (response info)
                     (if (not response)
