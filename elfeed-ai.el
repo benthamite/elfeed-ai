@@ -489,9 +489,10 @@ CALLBACK is called with (score . summary) on success, or nil."
   "Add ENTRY to the scoring queue and start processing if idle."
   (unless (or (elfeed-tagged-p elfeed-ai-scored-tag entry)
               (memq entry elfeed-ai--pending-queue))
-    (push entry elfeed-ai--pending-queue)
-    (unless elfeed-ai--scoring-in-progress
-      (elfeed-ai--process-queue))))
+    (push entry elfeed-ai--pending-queue))
+  (when (and elfeed-ai--pending-queue
+             (not elfeed-ai--scoring-in-progress))
+    (elfeed-ai--process-queue)))
 
 (defun elfeed-ai--process-queue ()
   "Process the next entry in the scoring queue."
