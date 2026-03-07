@@ -139,28 +139,32 @@
 
 ;;;; Prompt construction tests
 
+(ert-deftest elfeed-ai-test-system-message ()
+  "System message includes interest profile and instructions."
+  (let ((elfeed-ai-interest-profile "Emacs, Lisp"))
+    (let ((system (elfeed-ai--system-message)))
+      (should (string-match-p "Emacs, Lisp" system))
+      (should (string-match-p "score" system))
+      (should (string-match-p "summary" system)))))
+
 (ert-deftest elfeed-ai-test-build-prompt ()
-  "Prompt includes interest profile, title, and content."
+  "Prompt includes title and content but not the profile."
   (let ((elfeed-ai-interest-profile "Emacs, Lisp")
         (entry (elfeed-entry--create
                 :title "Elisp tips"
                 :content "Some useful tips.")))
     (let ((prompt (elfeed-ai--build-prompt entry)))
-      (should (string-match-p "Emacs, Lisp" prompt))
       (should (string-match-p "Elisp tips" prompt))
-      (should (string-match-p "Some useful tips" prompt)))))
+      (should (string-match-p "Some useful tips" prompt))
+      (should-not (string-match-p "Emacs, Lisp" prompt)))))
 
 (ert-deftest elfeed-ai-test-build-prompt-truncates ()
   "Content longer than `elfeed-ai-max-content-length' is truncated."
-  (let ((elfeed-ai-interest-profile "test profile")
-        (elfeed-ai-max-content-length 10)
+  (let ((elfeed-ai-max-content-length 10)
         (entry (elfeed-entry--create
                 :title "Test"
                 :content "This is a very long piece of content.")))
     (let ((prompt (elfeed-ai--build-prompt entry)))
-      ;; The truncated content "This is a " (10 chars) should appear,
-      ;; but the full content should not.
-      (should (string-match-p "test profile" prompt))
       (should (string-match-p "This is a " prompt))
       (should-not (string-match-p "very long piece" prompt)))))
 

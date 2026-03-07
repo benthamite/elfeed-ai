@@ -298,27 +298,16 @@ return yesterday's date."
 
 ;;;; Prompt construction
 
-(defun elfeed-ai--build-prompt (entry)
-  "Build the AI scoring prompt for elfeed ENTRY."
-  (let* ((title (or (elfeed-entry-title entry) "(no title)"))
-         (author (elfeed-ai--entry-author entry))
-         (content (or (elfeed-ai--entry-content entry) ""))
-         (truncated (if (> (length content) elfeed-ai-max-content-length)
-                        (substring content 0 elfeed-ai-max-content-length)
-                      content)))
-    (format
-     "You are a content relevance scorer. Given a user's interest profile and a \
+(defun elfeed-ai--system-message ()
+  "Return the system message for scoring requests.
+This contains the interest profile and scoring instructions, which
+remain constant across requests and benefit from prompt caching."
+  (format
+   "You are a content relevance scorer. Given a user's interest profile and a \
 content item, evaluate how relevant the item is to the user's interests.
 
 ## User's interest profile
 
-%s
-
-## Content item
-
-Title: %s
-Author: %s
-Content:
 %s
 
 ## Instructions
@@ -333,7 +322,18 @@ exactly two keys:
 
 Example response:
 {\"score\": 0.75, \"summary\": \"The article discusses recent advances in ...\"}"
-     (elfeed-ai--resolve-profile) title author truncated)))
+   (elfeed-ai--resolve-profile)))
+
+(defun elfeed-ai--build-prompt (entry)
+  "Build the user prompt for scoring elfeed ENTRY."
+  (let* ((title (or (elfeed-entry-title entry) "(no title)"))
+         (author (elfeed-ai--entry-author entry))
+         (content (or (elfeed-ai--entry-content entry) ""))
+         (truncated (if (> (length content) elfeed-ai-max-content-length)
+                        (substring content 0 elfeed-ai-max-content-length)
+                      content)))
+    (format "Title: %s\nAuthor: %s\nContent:\n%s"
+            title author truncated)))
 
 ;;;; Response parsing
 
@@ -382,13 +382,17 @@ CALLBACK is called with (score . summary) on success, or nil."
     (funcall callback nil))
    (t
     (let* ((prompt (elfeed-ai--build-prompt entry))
-           (prompt-tokens (elfeed-ai--estimate-tokens prompt))
+           (system (elfeed-ai--system-message))
+           (prompt-tokens (+ (elfeed-ai--estimate-tokens prompt)
+                             (elfeed-ai--estimate-tokens system)))
            (resolved (elfeed-ai--resolve-backend-and-model))
            (backend (car resolved))
            (model (cdr resolved))
            (gptel-backend backend)
-           (gptel-model model))
+           (gptel-model model)
+           (gptel-use-cache '(system)))
       (gptel-request prompt
+        :system system
         :callback (lambda (response info)
                     (if (not response)
                         (progn
