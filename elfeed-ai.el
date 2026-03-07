@@ -61,11 +61,12 @@
 ;;;; User options
 
 (defcustom elfeed-ai-interest-profile ""
-  "Natural language description of your interests.
-This string is included verbatim in every AI scoring prompt.  The more
-specific and descriptive it is, the better the AI can judge relevance.
-When empty, scoring is skipped."
-  :type 'string
+  "Natural language description of your interests, or a file containing one.
+If the value is a path to an existing readable file, its contents are
+used as the profile text.  Otherwise the value is included verbatim in
+every AI scoring prompt.  When empty, scoring is skipped."
+  :type '(choice (string :tag "Inline text")
+                 (file :tag "File containing profile"))
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-relevance-threshold 0.5
@@ -123,6 +124,21 @@ The value should be a symbol (e.g. `claude-sonnet-4-5-20250514')."
   "When non-nil, automatically score new entries as they arrive."
   :type 'boolean
   :group 'elfeed-ai)
+
+;;;; Profile resolution
+
+(defun elfeed-ai--resolve-profile ()
+  "Return the interest profile as a string.
+If `elfeed-ai-interest-profile' names a readable file, return its
+contents; otherwise return the value itself."
+  (let ((val elfeed-ai-interest-profile))
+    (if (and (stringp val)
+             (not (string-empty-p val))
+             (file-readable-p val))
+        (string-trim (with-temp-buffer
+                       (insert-file-contents val)
+                       (buffer-string)))
+      val)))
 
 ;;;; Faces
 
@@ -289,7 +305,7 @@ exactly two keys:
 
 Example response:
 {\"score\": 0.75, \"summary\": \"The article discusses recent advances in ...\"}"
-     elfeed-ai-interest-profile title author truncated)))
+     (elfeed-ai--resolve-profile) title author truncated)))
 
 ;;;; Response parsing
 
@@ -326,13 +342,15 @@ Example response:
   "Score ENTRY asynchronously using gptel.
 CALLBACK is called with (score . summary) on success, or nil."
   (cond
-   ((or (null elfeed-ai-interest-profile)
-        (string-empty-p elfeed-ai-interest-profile))
+   ((string-empty-p (elfeed-ai--resolve-profile))
+    (message "elfeed-ai: interest profile is empty")
     (funcall callback nil))
    ((elfeed-ai-budget-exhausted-p)
+    (message "elfeed-ai: daily token budget exhausted")
     (funcall callback nil))
    ((and (null (elfeed-ai--entry-content entry))
          (null (elfeed-entry-title entry)))
+    (message "elfeed-ai: entry has no title or content")
     (funcall callback nil))
    (t
     (let* ((prompt (elfeed-ai--build-prompt entry))
@@ -343,8 +361,7 @@ CALLBACK is called with (score . summary) on success, or nil."
         :callback (lambda (response info)
                     (if (not response)
                         (progn
-                          (message "elfeed-ai: scoring failed: %s"
-                                   (plist-get info :status))
+                          (message "elfeed-ai: gptel request failed: %S" info)
                           (funcall callback nil))
                       (let* ((result (elfeed-ai--parse-response response))
                              (response-tokens
@@ -511,13 +528,11 @@ buffer displays AI-generated summaries above the original content."
     (elfeed-ai-score-entry
      entry
      (lambda (result)
-       (if result
-           (progn
-             (message "elfeed-ai: score %.2f" (car result))
-             (elfeed-ai--refresh-search)
-             (when (derived-mode-p 'elfeed-show-mode)
-               (elfeed-show-refresh)))
-         (message "elfeed-ai: scoring failed"))))))
+       (when result
+         (message "elfeed-ai: score %.2f" (car result))
+         (elfeed-ai--refresh-search)
+         (when (derived-mode-p 'elfeed-show-mode)
+           (elfeed-show-refresh)))))))
 
 ;;;###autoload
 (defun elfeed-ai-score-selected ()
