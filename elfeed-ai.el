@@ -552,9 +552,10 @@ buffer displays AI-generated summaries above the original content."
 ;;;; Interactive commands
 
 ;;;###autoload
-(defun elfeed-ai-score-entry-at-point ()
-  "Score the elfeed entry at point."
-  (interactive)
+(defun elfeed-ai-score-entry-at-point (&optional force)
+  "Score the elfeed entry at point.
+With prefix argument FORCE, re-score even if already scored."
+  (interactive "P")
   (let ((entry (cond
                 ((derived-mode-p 'elfeed-search-mode)
                  (car (elfeed-search-selected)))
@@ -562,6 +563,9 @@ buffer displays AI-generated summaries above the original content."
                  elfeed-show-entry)
                 (t (user-error "Not in an elfeed buffer")))))
     (unless entry (user-error "No entry at point"))
+    (when (and (not force) (elfeed-tagged-p elfeed-ai-scored-tag entry))
+      (user-error "Entry already scored (%.2f); use C-u to re-score"
+                  (or (elfeed-meta entry :ai-score) 0)))
     (message "elfeed-ai: scoring...")
     (elfeed-ai-score-entry
      entry
@@ -576,15 +580,24 @@ buffer displays AI-generated summaries above the original content."
            (elfeed-show-refresh)))))))
 
 ;;;###autoload
-(defun elfeed-ai-score-selected ()
-  "Queue all selected entries in the search buffer for scoring."
-  (interactive)
+(defun elfeed-ai-score-selected (&optional force)
+  "Queue all selected entries in the search buffer for scoring.
+With prefix argument FORCE, re-score already scored entries."
+  (interactive "P")
   (unless (derived-mode-p 'elfeed-search-mode)
     (user-error "Not in elfeed search buffer"))
-  (let ((entries (elfeed-search-selected)))
-    (dolist (entry entries)
+  (let* ((entries (elfeed-search-selected))
+         (to-score (if force
+                       entries
+                     (cl-remove-if
+                      (lambda (e) (elfeed-tagged-p elfeed-ai-scored-tag e))
+                      entries))))
+    (dolist (entry to-score)
+      (when force
+        (elfeed-untag entry elfeed-ai-scored-tag))
       (elfeed-ai--enqueue entry))
-    (message "elfeed-ai: queued %d entries for scoring" (length entries))))
+    (message "elfeed-ai: queued %d entries for scoring (%d already scored)"
+             (length to-score) (- (length entries) (length to-score)))))
 
 ;;;###autoload
 (defun elfeed-ai-score-unscored ()
