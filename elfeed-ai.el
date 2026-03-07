@@ -76,11 +76,20 @@ every AI scoring prompt.  When empty, scoring is skipped."
   :type 'float
   :group 'elfeed-ai)
 
-(defcustom elfeed-ai-daily-token-budget 100000
-  "Maximum estimated tokens to use per day for AI scoring.
-Token usage is estimated heuristically (one token per four characters)."
-  :type 'integer
+(defcustom elfeed-ai-daily-budget '(tokens . 100000)
+  "Daily budget for AI scoring, as a (TYPE . LIMIT) cons cell.
+TYPE is `tokens' or `dollars'.
+
+In `tokens' mode, usage is estimated heuristically at one token
+per four characters.  In `dollars' mode, actual cost is computed
+via `gptel-plus'; if that package is not available, the budget is
+not enforced."
+  :type '(choice (cons :tag "Token limit" (const :tag "" tokens) integer)
+                 (cons :tag "Dollar limit" (const :tag "" dollars) number))
   :group 'elfeed-ai)
+
+(make-obsolete-variable 'elfeed-ai-daily-token-budget
+                        'elfeed-ai-daily-budget "0.2.0")
 
 (defcustom elfeed-ai-budget-reset-hour 0
   "Hour of day (0-23) when the daily token budget resets."
@@ -256,27 +265,41 @@ return yesterday's date."
     (with-temp-file elfeed-ai-budget-file
       (prin1 elfeed-ai--budget-cache (current-buffer)))))
 
+(defun elfeed-ai--budget-type ()
+  "Return the current budget type: `tokens' or `dollars'."
+  (car elfeed-ai-daily-budget))
+
+(defun elfeed-ai--budget-limit ()
+  "Return the current budget limit amount."
+  (cdr elfeed-ai-daily-budget))
+
 (defun elfeed-ai--ensure-budget ()
   "Ensure budget cache is loaded for the current period."
-  (let ((today (elfeed-ai--budget-date-string)))
+  (let ((today (elfeed-ai--budget-date-string))
+        (btype (elfeed-ai--budget-type)))
     (unless (and elfeed-ai--budget-cache
-                 (equal today (alist-get 'date elfeed-ai--budget-cache)))
+                 (equal today (alist-get 'date elfeed-ai--budget-cache))
+                 (eq btype (alist-get 'budget-type elfeed-ai--budget-cache)))
       (let ((saved (elfeed-ai--load-budget)))
         (setq elfeed-ai--budget-cache
-              (if (and saved (equal today (alist-get 'date saved)))
+              (if (and saved
+                       (equal today (alist-get 'date saved))
+                       (eq btype (alist-get 'budget-type saved)))
                   saved
-                (list (cons 'date today) (cons 'tokens-used 0))))))))
+                (list (cons 'date today)
+                      (cons 'budget-type btype)
+                      (cons 'used 0))))))))
 
 (defun elfeed-ai--budget-remaining ()
-  "Return the number of tokens remaining in today's budget."
+  "Return the amount remaining in today's budget."
   (elfeed-ai--ensure-budget)
-  (- elfeed-ai-daily-token-budget
-     (alist-get 'tokens-used elfeed-ai--budget-cache 0)))
+  (- (elfeed-ai--budget-limit)
+     (alist-get 'used elfeed-ai--budget-cache 0)))
 
-(defun elfeed-ai--record-usage (tokens)
-  "Add TOKENS to today's usage and persist."
+(defun elfeed-ai--record-usage (amount)
+  "Add AMOUNT to today's usage and persist."
   (elfeed-ai--ensure-budget)
-  (cl-incf (alist-get 'tokens-used elfeed-ai--budget-cache 0) tokens)
+  (cl-incf (alist-get 'used elfeed-ai--budget-cache 0) amount)
   (elfeed-ai--save-budget))
 
 (defun elfeed-ai--estimate-tokens (text)
@@ -286,7 +309,7 @@ return yesterday's date."
     0))
 
 (defun elfeed-ai-budget-exhausted-p ()
-  "Return non-nil if the daily token budget is exhausted."
+  "Return non-nil if the daily budget is exhausted."
   (<= (elfeed-ai--budget-remaining) 0))
 
 ;;;; Cost tracking
@@ -448,7 +471,14 @@ CALLBACK is called with (score . summary) on success, or nil."
                              (response-tokens
                               (elfeed-ai--estimate-tokens response))
                              (total-tokens (+ prompt-tokens response-tokens)))
-                        (elfeed-ai--record-usage total-tokens)
+                        (pcase (elfeed-ai--budget-type)
+                          ('tokens
+                           (elfeed-ai--record-usage total-tokens))
+                          ('dollars
+                           (if cost
+                               (elfeed-ai--record-usage cost)
+                             (elfeed-log 'warn
+                              "elfeed-ai: dollar budget requires gptel-plus for cost tracking"))))
                         (when result
                           (elfeed-ai--apply-result entry result cost))
                         (funcall callback result)))))))))
@@ -684,11 +714,16 @@ argument, prompt for the number of days."
   "Display the current AI token budget status."
   (interactive)
   (elfeed-ai--ensure-budget)
-  (let ((used (alist-get 'tokens-used elfeed-ai--budget-cache 0))
-        (total elfeed-ai-daily-token-budget)
+  (let ((used (alist-get 'used elfeed-ai--budget-cache 0))
+        (limit (elfeed-ai--budget-limit))
         (remaining (elfeed-ai--budget-remaining)))
-    (message "elfeed-ai: %d/%d tokens used (%d remaining)"
-             used total remaining)))
+    (pcase (elfeed-ai--budget-type)
+      ('tokens
+       (message "elfeed-ai: %d/%d tokens used (%d remaining)"
+                used limit remaining))
+      ('dollars
+       (message "elfeed-ai: $%.4f/$%.2f used ($%.4f remaining)"
+                used limit remaining)))))
 
 (provide 'elfeed-ai)
 ;;; elfeed-ai.el ends here

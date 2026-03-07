@@ -94,7 +94,7 @@
 (ert-deftest elfeed-ai-test-budget-tracking ()
   "Budget tracking records usage and detects exhaustion."
   (let ((elfeed-ai-budget-file (make-temp-file "elfeed-ai-budget-test"))
-        (elfeed-ai-daily-token-budget 1000)
+        (elfeed-ai-daily-budget '(tokens . 1000))
         (elfeed-ai--budget-cache nil))
     (unwind-protect
         (progn
@@ -113,7 +113,7 @@
 (ert-deftest elfeed-ai-test-budget-persistence ()
   "Budget data survives save/load cycle."
   (let ((elfeed-ai-budget-file (make-temp-file "elfeed-ai-budget-test"))
-        (elfeed-ai-daily-token-budget 5000)
+        (elfeed-ai-daily-budget '(tokens . 5000))
         (elfeed-ai--budget-cache nil))
     (unwind-protect
         (progn
@@ -123,7 +123,7 @@
           ;; Clear cache and reload from file.
           (setq elfeed-ai--budget-cache nil)
           (elfeed-ai--ensure-budget)
-          (should (= (alist-get 'tokens-used elfeed-ai--budget-cache) 1234)))
+          (should (= (alist-get 'used elfeed-ai--budget-cache) 1234)))
       (setq elfeed-ai--budget-cache nil)
       (delete-file elfeed-ai-budget-file))))
 
