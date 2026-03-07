@@ -108,18 +108,16 @@ Longer content is truncated."
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-backend nil
-  "gptel backend name for AI scoring, or nil to use `gptel-backend'.
-This is a string matching a registered gptel backend name, e.g.
-\"Gemini\" or \"Claude\".  When nil and `elfeed-ai-model' is set,
-the backend is inferred from the model."
-  :type '(choice (const :tag "Use gptel default" nil)
+  "gptel backend name for AI scoring, e.g. \"Gemini\" or \"Claude\".
+When nil, the backend is inferred from `elfeed-ai-model', falling
+back to `gptel-backend'."
+  :type '(choice (const :tag "Infer from model or use gptel default" nil)
                  (string :tag "Backend name"))
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-model nil
-  "gptel model for AI scoring, or nil to use `gptel-model'.
-A symbol such as `claude-sonnet-4-5-20250514'.  When set without
-`elfeed-ai-backend', the backend is inferred automatically."
+  "gptel model for AI scoring, e.g. `claude-sonnet-4-5-20250514'.
+When nil, defaults to `gptel-model'."
   :type '(choice (const :tag "Use gptel default" nil)
                  (symbol :tag "Model name"))
   :group 'elfeed-ai)
