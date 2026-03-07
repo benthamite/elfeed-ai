@@ -108,14 +108,28 @@ Longer content is truncated."
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-backend nil
-  "gptel backend for AI scoring, or nil to use `gptel-backend'."
+  "gptel backend for AI scoring, or nil to use `gptel-backend'.
+The value should be a backend object created with one of the
+`gptel-make-*' functions, e.g.:
+
+  (setq elfeed-ai-backend
+        (gptel-make-anthropic \"Claude\"
+          :key \\='gptel-api-key :stream t))
+
+If you set this, you should normally also set `elfeed-ai-model'
+to a model registered in this backend; otherwise gptel will fall
+back to the first model in the backend's model list."
   :type '(choice (const :tag "Use gptel default" nil)
                  (sexp :tag "gptel backend object"))
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-model nil
   "gptel model for AI scoring, or nil to use `gptel-model'.
-The value should be a symbol (e.g. `claude-sonnet-4-5-20250514')."
+The value should be a symbol naming a model registered in the
+active backend (either `elfeed-ai-backend' or `gptel-backend'),
+e.g. `claude-sonnet-4-5-20250514'.  If the model is not found in
+the backend's model list, gptel falls back to the backend's first
+available model."
   :type '(choice (const :tag "Use gptel default" nil)
                  (symbol :tag "Model name"))
   :group 'elfeed-ai)
