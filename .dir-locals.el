@@ -1,6 +1,8 @@
 ((org-mode . ((eval . (add-hook 'after-save-hook
                                 (lambda ()
-                                  (require 'ox-texinfo)
-                                  (let ((inhibit-message t))
-                                    (org-texinfo-export-to-texinfo)))
+                                  (when (equal (file-name-nondirectory buffer-file-name)
+                                               "README.org")
+                                    (require 'ox-texinfo)
+                                    (let ((inhibit-message t))
+                                      (org-texinfo-export-to-info))))
                                 nil t)))))

@@ -1,0 +1,772 @@
+\input texinfo    @c -*- texinfo -*-
+@c %**start of header
+@setfilename infovore.info
+@settitle Infovore: AI-powered content curation for Emacs
+@documentencoding UTF-8
+@documentlanguage en
+@c %**end of header
+
+@dircategory Emacs misc features
+@direntry
+* Infovore: (infovore). AI-powered content curation for Emacs.
+@end direntry
+
+@finalout
+@titlepage
+@title Infovore: AI-powered content curation for Emacs
+@author Pablo Stafforini (@email{pablo@@stafforini.com})
+@end titlepage
+
+@contents
+
+@ifnottex
+@node Top
+@top Infovore: AI-powered content curation for Emacs
+
+This manual describes the features and customization options for the Emacs Lisp package @samp{infovore}.
+
+@end ifnottex
+
+@menu
+* Overview::
+* User options::
+* Commands::
+* Functions::
+* Ebib integration::
+* Indices::
+
+@detailmenu
+--- The Detailed Node Listing ---
+
+User options
+
+* Sources configuration::
+* AI curation settings::
+* Twitter backend settings::
+* Scheduling settings::
+* Database settings::
+* Error handling settings::
+* Feed list display settings::
+
+Commands
+
+* Opening the feed::
+* Starting and stopping::
+* Manual fetching::
+* Feed list commands::
+* Refreshing and filtering::
+* Item detail commands::
+* Mode line indicator::
+
+Functions
+
+* Database management::
+* Item storage and retrieval::
+* Token budget tracking::
+* AI scoring pipeline::
+* URL normalization and deduplication::
+* Logging::
+* Fetch with retry::
+* Source protocol::
+
+Indices
+
+* Function index::
+* Variable index::
+
+@end detailmenu
+@end menu
+
+@node Overview
+@chapter Overview
+
+Infovore is an AI-powered content aggregator and curator that runs
+entirely inside Emacs.  It fetches content from user-configured sources
+--- Twitter accounts, RSS feeds, Substack newsletters --- stores
+everything in a local SQLite database, uses an AI model (via @samp{gptel}) to
+score each item for relevance against a natural-language interest
+profile, and presents the curated results in an elfeed-style split-pane
+interface.
+
+The package solves the problem of information overload: rather than
+manually checking dozens of feeds and accounts, you describe your
+interests once, and infovore continuously fetches, evaluates, and
+surfaces only the content that matters to you.  Items that score above a
+configurable relevance threshold appear in the feed list; everything
+else is stored but hidden from the default view.
+
+Infovore is organized around several cooperating modules:
+
+@itemize
+@item
+@strong{Source plugins} fetch content asynchronously from different platforms.
+Each source type (RSS, Twitter, Substack) is implemented as an EIEIO
+class inheriting from an abstract base class defined in
+@samp{infovore-source.el}.  New source types can be added by subclassing
+and implementing two generic methods.
+
+@item
+@strong{Database layer} (@samp{infovore-db.el}) manages all persistence through
+@samp{emacsql} and @samp{emacsql-sqlite}.  It stores fetched items, tracks
+read/starred/curated state, and maintains a daily token budget ledger.
+
+@item
+@strong{AI curation} (@samp{infovore-ai.el}) handles the scoring pipeline.  For
+each uncurated item, it constructs a prompt containing the user's
+interest profile and the item's content, sends it to the configured
+@samp{gptel} backend, parses the JSON response to extract a relevance score
+and a summary, and updates the database.  A daily token budget
+prevents runaway API costs.
+
+@item
+@strong{Feed list view} (@samp{infovore-list.el}) displays curated items in a
+@samp{tabulated-list-mode} buffer with columns for source type, author,
+title, score, and relative timestamp.
+
+@item
+@strong{Item detail view} (@samp{infovore-show.el}) renders either the AI-generated
+summary or the original content (with HTML rendered via @samp{shr}) in a
+split buffer below the feed list.
+
+@item
+@strong{Mode line indicator} (@samp{infovore-modeline.el}) shows the count of
+unread curated items as @samp{[IV:N]} in the global mode line.
+
+@item
+@strong{Ebib integration} (@samp{infovore-ebib.el}) is an optional module that
+lets you save an item's citation metadata to an @samp{ebib} bibliography
+database via @samp{zotra}.
+@end itemize
+
+The core dependencies are @samp{gptel} (AI backend), @samp{elfeed} (XML parsing
+only), @samp{emacsql} and @samp{emacsql-sqlite} (database), and Emacs 29.1 or
+later (for native @samp{libxml} support and @samp{shr}).
+
+@node User options
+@chapter User options
+
+@menu
+* Sources configuration::
+* AI curation settings::
+* Twitter backend settings::
+* Scheduling settings::
+* Database settings::
+* Error handling settings::
+* Feed list display settings::
+@end menu
+
+@node Sources configuration
+@section Sources configuration
+
+@vindex infovore-sources
+The user option @code{infovore-sources} defines the list of content sources
+that infovore monitors.  Each element is a property list with at least a
+@code{:type} key specifying the source type (@code{rss}, @code{twitter}, or @code{substack})
+and type-specific keys providing the necessary identifiers.
+
+The default value is an empty list.  The accepted type is a list of
+plists.  You must populate this variable for infovore to have anything
+to fetch.  A typical configuration looks like this:
+
+@lisp
+(setq infovore-sources
+      '((:type rss :url "https://example.com/feed.xml")
+        (:type twitter :username "elikiln")
+        (:type substack :publication "astralcodexten")))
+@end lisp
+
+Each source type requires different keys:
+
+@itemize
+@item
+@code{rss} --- requires @code{:url} (the feed URL).
+@item
+@code{twitter} --- requires @code{:username} (without the @samp{@@} prefix).
+@item
+@code{substack} --- requires @code{:publication} (the subdomain name, e.g.
+@samp{"astralcodexten"} for @samp{astralcodexten.substack.com}).
+@end itemize
+
+All types accept an optional @code{:name} key for a custom display name;
+otherwise the name is derived from the identifier.
+
+@node AI curation settings
+@section AI curation settings
+
+@vindex infovore-interest-profile
+@vindex infovore-relevance-threshold
+@vindex infovore-daily-token-budget
+@vindex infovore-budget-reset-hour
+The user option @code{infovore-interest-profile} is a free-form string
+describing your interests in natural language.  This string is included
+verbatim in every AI scoring prompt, so the more specific and
+descriptive it is, the better the AI can judge relevance.  The default
+value is an empty string.  When left empty, AI scoring is skipped
+entirely and items remain uncurated.  A good profile might look like:
+
+@lisp
+(setq infovore-interest-profile
+      "AI safety, Emacs, functional programming, philosophy of mind,
+       effective altruism, longevity research")
+@end lisp
+
+The user option @code{infovore-relevance-threshold} sets the minimum AI score
+(a float between 0.0 and 1.0) for an item to appear in the default
+curated feed view.  The default value is @code{0.5}.  Lowering this value
+shows more items at the cost of including less relevant content;
+raising it produces a tighter, more selective feed.  This threshold is
+used by @code{infovore-list-refresh} when filtering items
+(@ref{Refreshing and filtering}).
+
+The user option @code{infovore-daily-token-budget} caps the estimated number
+of tokens that infovore will consume per day for AI curation.  The
+default value is @code{100000}.  Token usage is estimated heuristically (one
+token per four characters) and tracked both in memory and in the
+database.  When the budget is exhausted, remaining uncurated items are
+deferred to the next budget period.  You would increase this value if
+you have many sources and want more items scored per day, or decrease it
+to control API costs.
+
+The user option @code{infovore-budget-reset-hour} specifies the hour of the
+day (0--23) at which the daily token budget resets.  The default value is
+@code{0} (midnight).  If you typically use Emacs late at night, setting this
+to a later hour (e.g. @code{4}) ensures your budget period aligns with your
+usage pattern rather than resetting mid-session.
+
+@node Twitter backend settings
+@section Twitter backend settings
+
+@vindex infovore-twitter-backend
+@vindex infovore-twitter-rss-bridge-url
+@vindex infovore-twitter-api-bearer-token
+@vindex infovore-twitter-scraper-command
+The user option @code{infovore-twitter-backend} selects which method infovore
+uses to fetch tweets.  It accepts one of three symbols:
+
+@itemize
+@item
+@code{rss-bridge} (the default) --- fetches tweets as an Atom feed from a
+self-hosted RSS-Bridge instance.  This is the recommended approach.
+@item
+@code{api} --- uses the official Twitter API v2 with a bearer token.
+@item
+@code{scraper} --- shells out to an external command-line tool.
+@end itemize
+
+The user option @code{infovore-twitter-rss-bridge-url} specifies the base URL
+of your RSS-Bridge instance (e.g.
+@samp{"https://rss-bridge.example.com"}).  It is required when
+@code{infovore-twitter-backend} is set to @code{rss-bridge}.  The default value is
+@code{nil}.
+
+The user option @code{infovore-twitter-api-bearer-token} holds the bearer
+token for the official Twitter API v2.  It is required when
+@code{infovore-twitter-backend} is set to @code{api}.  The default value is @code{nil}.
+You obtain this token from the Twitter Developer Portal.
+
+The user option @code{infovore-twitter-scraper-command} specifies the
+executable name or path of an external tweet scraper.  It is required
+when @code{infovore-twitter-backend} is set to @code{scraper}.  The default value
+is @code{nil}.  The command is called with the Twitter username as its sole
+argument and must write a JSON array of tweet objects to standard output.
+Each object should contain at least @code{id}, @code{text}, @code{created_at}, and
+@code{url} keys.
+
+@node Scheduling settings
+@section Scheduling settings
+
+@vindex infovore-fetch-interval
+The user option @code{infovore-fetch-interval} controls how many minutes
+elapse between automatic fetch cycles.  The default value is @code{60}.  The
+type is an integer.  A lower value means more frequent fetching (and
+potentially more API usage); a higher value reduces resource
+consumption.  This option takes effect when @code{infovore-start} is called
+(@ref{Starting and stopping}).
+
+@node Database settings
+@section Database settings
+
+@vindex infovore-database-file
+The user option @code{infovore-database-file} specifies the path to the
+SQLite database file.  The default value is @samp{infovore.db} inside
+@code{user-emacs-directory}.  The type is a file path.  You might change this
+if you want the database stored on a different disk or outside your
+Emacs configuration directory.  The database is created automatically on
+first use.
+
+@node Error handling settings
+@section Error handling settings
+
+@vindex infovore-max-retries
+@vindex infovore-retry-base-delay
+The user option @code{infovore-max-retries} sets the maximum number of retry
+attempts when a fetch request fails.  The default value is @code{3}.  The
+type is an integer.  After all retries are exhausted, the source is
+skipped for the current fetch cycle and the failure is logged.
+
+The user option @code{infovore-retry-base-delay} sets the base delay in
+seconds for exponential backoff between retries.  The default value is
+@code{30}.  The delay for attempt @emph{N} is calculated as @code{(* base-delay (expt
+4 N))}, yielding intervals of 30 seconds, 120 seconds, and 480 seconds
+with the default base delay.  You would increase this if your sources
+are rate-limited and need longer cool-down periods.
+
+@node Feed list display settings
+@section Feed list display settings
+
+@vindex infovore-list-format
+The user option @code{infovore-list-format} controls the columns displayed in
+the feed list buffer.  Each element is a list of @code{(FIELD WIDTH
+SORTABLE-P)}.  The default value is:
+
+@lisp
+'((:source 6 t) (:author 20 t) (:title 0 t) (:score 5 t) (:time 12 t))
+@end lisp
+
+Available fields are @code{:source} (type icon), @code{:author}, @code{:title},
+@code{:score} (relevance), and @code{:time} (relative timestamp).  A width of @code{0}
+means the column expands to fill available space.  You can reorder,
+remove, or resize columns to suit your workflow.
+
+@node Commands
+@chapter Commands
+
+@menu
+* Opening the feed::
+* Starting and stopping::
+* Manual fetching::
+* Feed list commands::
+* Refreshing and filtering::
+* Item detail commands::
+* Mode line indicator::
+@end menu
+
+@node Opening the feed
+@section Opening the feed
+
+@findex infovore
+The command @code{infovore} is the main entry point.  It opens (or switches
+to) the @samp{*infovore*} buffer, which displays the curated feed list.  On
+first invocation it initializes the database and instantiates source
+objects from @code{infovore-sources}.  Subsequent calls simply switch to the
+existing buffer and refresh the displayed items.
+
+This command does not start the automatic fetch timer.  To begin
+periodic fetching, call @code{infovore-start} separately
+(@ref{Starting and stopping}).
+
+@node Starting and stopping
+@section Starting and stopping
+
+@findex infovore-start
+@findex infovore-stop
+The command @code{infovore-start} activates the automatic fetch timer.  It
+instantiates all configured sources, opens the database, and schedules
+periodic fetch cycles at the interval specified by
+@code{infovore-fetch-interval} (@ref{Scheduling settings}).  The first fetch cycle
+runs immediately.  If a timer is already active, it is cancelled and
+replaced.  A confirmation message is displayed in the echo area.
+
+The command @code{infovore-stop} cancels the automatic fetch timer.  It does
+not close the database or destroy the feed list buffer; it simply stops
+future fetch cycles from being scheduled.
+
+@node Manual fetching
+@section Manual fetching
+
+@findex infovore-fetch-now
+The command @code{infovore-fetch-now} triggers an immediate fetch cycle
+outside the normal timer schedule.  If a fetch cycle is already in
+progress, it displays a message and does nothing.  This is useful for
+pulling in new content on demand without waiting for the next scheduled
+cycle.  It is also bound to @samp{G} in the feed list
+(@ref{Feed list commands}).
+
+@node Feed list commands
+@section Feed list commands
+
+@findex infovore-list-show-item
+@findex infovore-list-browse-url
+@findex infovore-list-toggle-read
+@findex infovore-list-toggle-starred
+@findex infovore-list-refresh
+@findex infovore-list-show-all
+@findex infovore-list-show-curated
+The following commands are available in @code{infovore-list-mode}, the major
+mode for the @samp{*infovore*} feed list buffer.
+
+The command @code{infovore-list-show-item}, bound to @samp{RET}, opens the item at
+point in the detail view below the feed list
+(@ref{Item detail commands}).  If no item is at point, it signals an error.
+
+The command @code{infovore-list-browse-url}, bound to @samp{b}, opens the original
+URL of the item at point in the default web browser via @code{browse-url}.
+If the item has no URL, it signals an error.
+
+The command @code{infovore-list-toggle-read}, bound to @samp{r}, toggles the
+read/unread state of the item at point.  The new state is persisted to
+the database immediately and the list is refreshed to update the visual
+styling.  Read items are displayed with @code{infovore-read-face} (inherits
+from @code{shadow}), making them visually dimmed.
+
+The command @code{infovore-list-toggle-starred}, bound to @samp{s}, toggles the
+starred state of the item at point.  Starred items are displayed with
+@code{infovore-starred-face} (inherits from @code{warning}, bold).  The state is
+persisted to the database immediately.
+
+The command @code{infovore-list-refresh}, bound to @samp{g}, re-queries the
+database and repopulates the list.  In the default curated view, it
+shows only items where @code{curated} is true and @code{score} is at or above
+@code{infovore-relevance-threshold}.  In the ``show all'' view, it displays
+every item regardless of curation status.
+
+The command @code{infovore-list-show-all}, bound to @samp{+}, switches the feed
+list to display all items including uncurated ones.  This is useful for
+reviewing everything that has been fetched.
+
+The command @code{infovore-list-show-curated}, bound to @samp{-}, switches back to
+the default curated view, showing only items that have been scored and
+meet the relevance threshold.
+
+The full keymap for @code{infovore-list-mode}:
+
+@multitable {aaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@headitem Key
+@tab Command
+@item @samp{RET}
+@tab @code{infovore-list-show-item}
+@item @samp{b}
+@tab @code{infovore-list-browse-url}
+@item @samp{r}
+@tab @code{infovore-list-toggle-read}
+@item @samp{s}
+@tab @code{infovore-list-toggle-starred}
+@item @samp{g}
+@tab @code{infovore-list-refresh}
+@item @samp{G}
+@tab @code{infovore-fetch-now}
+@item @samp{q}
+@tab @code{quit-window}
+@item @samp{S}
+@tab @code{infovore-ebib-save}
+@item @samp{+}
+@tab @code{infovore-list-show-all}
+@item @samp{-}
+@tab @code{infovore-list-show-curated}
+@item @samp{n}
+@tab @code{next-line}
+@item @samp{p}
+@tab @code{previous-line}
+@end multitable
+
+@node Refreshing and filtering
+@section Refreshing and filtering
+
+@findex infovore-list-refresh
+The command @code{infovore-list-refresh} queries the database and rebuilds the
+feed list.  The query depends on the current view mode:
+
+@itemize
+@item
+In the default curated view, items are filtered to those where
+@code{curated} is true and @code{score} is at or above
+@code{infovore-relevance-threshold} (@ref{AI curation settings}).
+@item
+In the ``show all'' view (toggled with @samp{+}), all items are shown.
+@end itemize
+
+In both cases, items are sorted by timestamp in descending order (newest
+first).  After refreshing, the item count is displayed in the echo area.
+
+@node Item detail commands
+@section Item detail commands
+
+@findex infovore-show-item
+@findex infovore-show-toggle-view
+@findex infovore-show-browse-url
+@findex infovore-show-next
+@findex infovore-show-prev
+The following commands are available in @code{infovore-show-mode}, the major
+mode for the @samp{*infovore-entry*} detail buffer.
+
+The function @code{infovore-show-item} opens an item in the detail view.  It
+creates or reuses the @samp{*infovore-entry*} buffer, displays it in a
+window below the current one (occupying 40% of the frame height), and
+renders the item's summary by default.  The header section shows the
+title, author, source type, date, score, and a clickable URL@.
+
+The command @code{infovore-show-toggle-view}, bound to @samp{TAB} and @samp{t},
+toggles between the summary and original content views.  In summary
+mode, the AI-generated summary is displayed as plain text.  In original
+mode, the full content is rendered --- HTML content is processed through
+@samp{shr} for rich display, while plain text is inserted directly.
+
+The command @code{infovore-show-browse-url}, bound to @samp{b}, opens the current
+item's URL in the default web browser.
+
+The command @code{infovore-show-next}, bound to @samp{n}, advances point in the
+feed list window to the next line and displays that item in the detail
+view.  This allows you to read through items sequentially without
+switching back to the list buffer.
+
+The command @code{infovore-show-prev}, bound to @samp{p}, moves to the previous
+item in the feed list and displays it.
+
+The full keymap for @code{infovore-show-mode}:
+
+@multitable {aaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@headitem Key
+@tab Command
+@item @samp{TAB}
+@tab @code{infovore-show-toggle-view}
+@item @samp{t}
+@tab @code{infovore-show-toggle-view}
+@item @samp{b}
+@tab @code{infovore-show-browse-url}
+@item @samp{q}
+@tab @code{quit-window}
+@item @samp{n}
+@tab @code{infovore-show-next}
+@item @samp{p}
+@tab @code{infovore-show-prev}
+@end multitable
+
+@node Mode line indicator
+@section Mode line indicator
+
+@findex infovore-mode-line-mode
+@findex infovore-modeline-update
+The global minor mode @code{infovore-mode-line-mode} adds an indicator to the
+mode line showing the count of unread curated items.  When enabled, the
+mode line displays @samp{[IV:N]} where @emph{N} is the number of unread curated
+items.  When there are unread items, the indicator uses
+@code{infovore-modeline-active-face} (bold, amber foreground); when the count
+is zero, it uses the default @code{infovore-modeline-face}.
+
+Enable it in your init file:
+
+@lisp
+(infovore-mode-line-mode 1)
+@end lisp
+
+The count is updated automatically after each fetch cycle.  You can also
+call @code{infovore-modeline-update} manually to refresh the count from the
+database at any time.
+
+@node Functions
+@chapter Functions
+
+@menu
+* Database management::
+* Item storage and retrieval::
+* Token budget tracking::
+* AI scoring pipeline::
+* URL normalization and deduplication::
+* Logging::
+* Fetch with retry::
+* Source protocol::
+@end menu
+
+@node Database management
+@section Database management
+
+@findex infovore-db-ensure
+@findex infovore-db-close
+The function @code{infovore-db-ensure} opens the database connection if it is
+not already open and creates the required tables and indexes if they do
+not exist.  It returns the active @samp{emacsql} connection object.  This
+function is called automatically by most other database functions and by
+@code{infovore} and @code{infovore-start}, so you rarely need to call it directly.
+
+The function @code{infovore-db-close} closes the database connection if it is
+open.  You might call this if you need to move or replace the database
+file while Emacs is running.
+
+@node Item storage and retrieval
+@section Item storage and retrieval
+
+@findex infovore-db-insert-item
+@findex infovore-db-update-item
+@findex infovore-db-get-item
+@findex infovore-db-item-exists-p
+@findex infovore-db-query-items
+@findex infovore-db-uncurated-items
+@findex infovore-db-count-unread-curated
+The function @code{infovore-db-insert-item} inserts an @code{infovore-item} struct
+into the database.  It uses @samp{INSERT OR IGNORE} semantics, so attempting
+to insert an item with a duplicate ID is silently skipped.  This is the
+mechanism behind infovore's URL-based deduplication.
+
+The function @code{infovore-db-update-item} updates specific fields of an
+existing item identified by its ID@.  It accepts a plist of field-value
+pairs (e.g. @code{:score 0.8 :summary "..."}).  Boolean fields (@code{:read-p},
+@code{:starred-p}, @code{:curated-p}) are automatically converted to integers for
+storage.
+
+The function @code{infovore-db-get-item} retrieves a single item by ID and
+returns it as an @code{infovore-item} struct, or @code{nil} if not found.
+
+The function @code{infovore-db-item-exists-p} returns non-nil if an item with
+the given ID exists in the database.  This is used during fetch cycles
+to skip already-known items without loading their full content.
+
+The function @code{infovore-db-query-items} is the general-purpose query
+function.  It accepts keyword arguments for filtering: @code{:curated-only},
+@code{:min-score}, @code{:source-id}, @code{:source-type}, @code{:limit}, @code{:offset}, and
+@code{:order-by}.  It returns a list of @code{infovore-item} structs.  The feed
+list view uses this function to populate its display
+(@ref{Refreshing and filtering}).
+
+The function @code{infovore-db-uncurated-items} returns items where
+@code{curated} is false, ordered by fetch time (oldest first).  It accepts an
+optional @code{limit} argument.  The AI curation pipeline uses this function
+to find items that need scoring
+(@ref{AI scoring pipeline}).
+
+The function @code{infovore-db-count-unread-curated} returns the count of
+items that are both curated and unread.  The mode line indicator uses
+this to display the unread count
+(@ref{Mode line indicator}).
+
+@node Token budget tracking
+@section Token budget tracking
+
+@findex infovore-db-get-budget-tokens
+@findex infovore-db-add-budget-tokens
+@findex infovore-ai-budget-exhausted-p
+The function @code{infovore-db-get-budget-tokens} returns the number of
+tokens used on a given date (specified as a @samp{"YYYY-MM-DD"} string).  It
+returns @code{0} if no entry exists for that date.
+
+The function @code{infovore-db-add-budget-tokens} adds a token count to the
+budget for a given date.  It uses upsert semantics: if no row exists for
+the date, one is created; otherwise the amount is added to the existing
+total.
+
+The function @code{infovore-ai-budget-exhausted-p} returns non-nil when the
+daily token budget has been fully consumed.  The curation pipeline
+checks this before scoring each item and stops early when it returns
+non-nil (@ref{AI curation settings}).
+
+@node AI scoring pipeline
+@section AI scoring pipeline
+
+@findex infovore-ai-score-item
+@findex infovore-ai-curate-pending
+The function @code{infovore-ai-score-item} scores a single @code{infovore-item}
+asynchronously using @samp{gptel}.  It constructs a prompt from the user's
+interest profile and the item's content, sends it to the AI backend, and
+calls a callback with a cons cell @code{(score . summary)} on success, or
+@code{nil} on failure.  Scoring is skipped (callback called with @code{nil}) in
+three cases: the interest profile is empty, the daily token budget is
+exhausted, or the item has neither title nor content.  Content longer
+than 4000 characters is truncated before being sent.
+
+The function @code{infovore-ai-curate-pending} processes all uncurated items
+sequentially.  For each item, it calls @code{infovore-ai-score-item}, and
+on success updates the item's score, summary, and curated status in the
+database.  Processing stops early if the token budget is exhausted.
+When all items have been processed (or the budget runs out), it calls a
+callback with the count of items successfully scored.  The main fetch
+cycle calls this function after inserting newly fetched items
+(@ref{Manual fetching}).
+
+@node URL normalization and deduplication
+@section URL normalization and deduplication
+
+@findex infovore-normalize-url
+The function @code{infovore-normalize-url} normalizes a URL for
+deduplication purposes.  It lowercases the scheme and host, strips
+trailing slashes from the path, removes @samp{utm_*} tracking query
+parameters, and preserves fragments.  The normalized URL serves as the
+item's unique ID in the database, ensuring that the same article reached
+via different tracking links is not stored twice.
+
+@node Logging
+@section Logging
+
+@findex infovore-log
+@vindex infovore-log-buffer-name
+The function @code{infovore-log} writes a timestamped, level-tagged message to
+the @samp{*infovore-log*} buffer.  The level argument is one of @code{info},
+@code{warn}, or @code{error}.  All significant events throughout infovore ---
+fetch attempts, parse results, AI scoring, budget exhaustion, errors ---
+are logged through this function.  The log buffer is useful for
+diagnosing fetch failures, understanding why items were skipped, and
+monitoring token usage.
+
+The variable @code{infovore-log-buffer-name} holds the name of the log
+buffer.  Its default value is @samp{"*infovore-log*"}.
+
+@node Fetch with retry
+@section Fetch with retry
+
+@findex infovore-fetch-with-retry
+The function @code{infovore-fetch-with-retry} fetches a URL asynchronously
+with exponential backoff retry.  On success, it calls the callback with
+the response buffer.  On final failure (after all retries), it calls
+the callback with @code{nil}.  The number of retries defaults to
+@code{infovore-max-retries} (@ref{Error handling settings}).  All source plugins use
+this function for their HTTP requests, providing uniform retry behavior
+across the package.
+
+@node Source protocol
+@section Source protocol
+
+@findex infovore-source-fetch
+@findex infovore-source-parse
+The generic function @code{infovore-source-fetch} is the entry point for
+fetching new items from a source.  It takes a source object and a
+callback, and calls the callback asynchronously with a list of
+@code{infovore-item} structs (or @code{nil} on failure).  Each source type
+provides its own implementation of this method.
+
+The generic function @code{infovore-source-parse} converts raw fetched data
+(typically an XML parse tree or JSON alist) into a list of
+@code{infovore-item} structs.  This is called internally by each source's
+@code{infovore-source-fetch} implementation.
+
+@node Ebib integration
+@chapter Ebib integration
+
+@findex infovore-ebib-save
+@findex infovore-ebib-available-p
+The optional module @samp{infovore-ebib.el} integrates infovore with @samp{ebib}
+(the Emacs Bib@TeX{} database manager) and @samp{zotra} (a citation metadata
+fetcher).  When both packages are installed, you can save an item's
+bibliographic metadata directly to your @samp{ebib} database.
+
+The command @code{infovore-ebib-save}, bound to @samp{S} in both
+@code{infovore-list-mode} and @code{infovore-show-mode}, extracts the URL of the
+item at point, passes it to @code{zotra-get-entry-from-url} to retrieve a
+Bib@TeX{} entry, and imports the result into @samp{ebib} via
+@code{ebib-import-entries}.  A confirmation message is displayed on success.
+
+If either @samp{zotra} or @samp{ebib} is not installed, the command signals a
+@code{user-error} explaining which package is missing.  The function
+@code{infovore-ebib-available-p} returns non-nil when both packages are
+loaded, which can be useful for conditionally binding keys or enabling
+menu entries.
+
+This module is loaded via @code{(require 'infovore-ebib nil t)} in the main
+entry point, so it is silently skipped when its dependencies are absent.
+
+@node Indices
+@chapter Indices
+
+@menu
+* Function index::
+* Variable index::
+@end menu
+
+@node Function index
+@section Function index
+
+@printindex fn
+
+@node Variable index
+@section Variable index
+
+@printindex vr
+
+@bye
