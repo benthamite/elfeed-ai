@@ -69,12 +69,10 @@ Returns nil if no item can be determined."
     (symbol-value 'infovore-show--item))
    ;; In list mode, the item is associated with the current line
    ;; via a text property or tabulated-list entry.
-   ((and (boundp 'infovore-list-mode)
-         (derived-mode-p 'infovore-list-mode))
-    (or (and (boundp 'infovore-list--get-item-at-point)
-             (fboundp 'infovore-list--get-item-at-point)
-             (infovore-list--get-item-at-point))
-        (get-text-property (line-beginning-position) 'infovore-item)))
+   ((derived-mode-p 'infovore-list-mode)
+    (if (fboundp 'infovore-list--get-item-at-point)
+        (infovore-list--get-item-at-point)
+      (get-text-property (line-beginning-position) 'infovore-item)))
    ;; Fallback: check for item text property at point.
    (t (get-text-property (line-beginning-position) 'infovore-item))))
 
