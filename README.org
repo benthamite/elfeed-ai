@@ -196,10 +196,10 @@ usage in the echo area.
 
 - ~elfeed-ai-score-face~ --- default face for scores in the search
   buffer.
-- ~elfeed-ai-score-high-face~ --- face for scores >= 0.7 (inherits
-  from ~success~).
-- ~elfeed-ai-score-low-face~ --- face for scores <= 0.3 (inherits from
-  ~shadow~).
+- ~elfeed-ai-score-high-face~ --- face for scores at or above
+  ~elfeed-ai-score-high-threshold~ (inherits from ~success~).
+- ~elfeed-ai-score-low-face~ --- face for scores at or below
+  ~elfeed-ai-score-low-threshold~ (inherits from ~shadow~).
 - ~elfeed-ai-summary-heading-face~ --- face for the "AI Summary"
   heading in the show buffer.
 

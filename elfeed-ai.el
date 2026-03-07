@@ -186,12 +186,14 @@ contents; otherwise return the value itself."
 
 (defface elfeed-ai-score-high-face
   '((t :inherit success))
-  "Face for high AI scores (>= 0.7) in the search buffer."
+  "Face for high AI scores in the search buffer.
+Applied when the score is at or above `elfeed-ai-score-high-threshold'."
   :group 'elfeed-ai)
 
 (defface elfeed-ai-score-low-face
   '((t :inherit shadow))
-  "Face for low AI scores (<= 0.3) in the search buffer."
+  "Face for low AI scores in the search buffer.
+Applied when the score is at or below `elfeed-ai-score-low-threshold'."
   :group 'elfeed-ai)
 
 (defface elfeed-ai-summary-heading-face
@@ -498,7 +500,8 @@ CALLBACK is called with (score . summary) on success, or nil."
                       ((<= score elfeed-ai-score-low-threshold)
                        'elfeed-ai-score-low-face)
                       (t 'elfeed-ai-score-face)))
-         (score-width 6)
+         (score-width 6) ; "0.85" or "  - " (4) + padding
+         ;; 10 accounts for the date column, matching elfeed's default.
          (title-width (- (window-width) 10 score-width
                          elfeed-search-trailing-width))
          (title-column (elfeed-format-column
@@ -536,7 +539,8 @@ CALLBACK is called with (score . summary) on success, or nil."
            "\n\n"
            summary
            "\n\n"
-           (propertize (make-string 60 ?─) 'face 'shadow)
+           (propertize (make-string 60 ?─) 'face 'shadow) ; visual separator
+
            "\n\n"))))))
 
 ;;;; Minor mode
