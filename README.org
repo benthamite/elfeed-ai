@@ -15,6 +15,7 @@ This manual describes the features and customization options for the Emacs Lisp 
 * Overview
 :PROPERTIES:
 :CUSTOM_ID: h:overview
+:ID:       00C82973-051A-4BB4-AA48-3FF493EF7AC0
 :END:
 
 Infovore is an AI-powered content aggregator and curator that runs
@@ -73,11 +74,13 @@ later (for native =libxml= support and =shr=).
 * User options
 :PROPERTIES:
 :CUSTOM_ID: h:user-options
+:ID:       65E726B8-4A50-47F7-B493-A00C8DC974FC
 :END:
 
 ** Sources configuration
 :PROPERTIES:
 :CUSTOM_ID: h:sources-configuration
+:ID:       E3C1F457-1037-4949-92E8-6E8445B1D7B1
 :END:
 
 #+vindex: infovore-sources
@@ -110,6 +113,7 @@ otherwise the name is derived from the identifier.
 ** AI curation settings
 :PROPERTIES:
 :CUSTOM_ID: h:ai-curation-settings
+:ID:       DB7EE1EC-F021-45E8-97B7-AA8F1424E972
 :END:
 
 #+vindex: infovore-interest-profile
@@ -155,6 +159,7 @@ usage pattern rather than resetting mid-session.
 ** Twitter backend settings
 :PROPERTIES:
 :CUSTOM_ID: h:twitter-backend-settings
+:ID:       0CA48913-2A86-4871-9924-FD02E3C11242
 :END:
 
 #+vindex: infovore-twitter-backend
@@ -191,6 +196,7 @@ Each object should contain at least ~id~, ~text~, ~created_at~, and
 ** Scheduling settings
 :PROPERTIES:
 :CUSTOM_ID: h:scheduling-settings
+:ID:       B5739287-59BE-472E-93C5-07D1B12F6336
 :END:
 
 #+vindex: infovore-fetch-interval
@@ -204,6 +210,7 @@ consumption.  This option takes effect when ~infovore-start~ is called
 ** Database settings
 :PROPERTIES:
 :CUSTOM_ID: h:database-settings
+:ID:       80093376-B1F1-4D64-A384-2F302AEC04F0
 :END:
 
 #+vindex: infovore-database-file
@@ -217,6 +224,7 @@ first use.
 ** Error handling settings
 :PROPERTIES:
 :CUSTOM_ID: h:error-handling-settings
+:ID:       D574B788-2C0E-4D6D-8DCA-588292592E23
 :END:
 
 #+vindex: infovore-max-retries
@@ -236,6 +244,7 @@ are rate-limited and need longer cool-down periods.
 ** Feed list display settings
 :PROPERTIES:
 :CUSTOM_ID: h:feed-list-display-settings
+:ID:       DB2C6B58-6FA9-4A8D-B2CD-1EB6C2CE3190
 :END:
 
 #+vindex: infovore-list-format
@@ -255,11 +264,13 @@ remove, or resize columns to suit your workflow.
 * Commands
 :PROPERTIES:
 :CUSTOM_ID: h:commands
+:ID:       9A3240C4-973D-4470-98B0-CDA837427535
 :END:
 
 ** Opening the feed
 :PROPERTIES:
 :CUSTOM_ID: h:opening-the-feed
+:ID:       A3BE2BA8-ACE2-4DEC-B658-2AADB89CD0DA
 :END:
 
 #+findex: infovore
@@ -276,6 +287,7 @@ periodic fetching, call ~infovore-start~ separately
 ** Starting and stopping
 :PROPERTIES:
 :CUSTOM_ID: h:starting-and-stopping
+:ID:       CDF83AEE-4EE1-42EA-8579-FA7D559B5398
 :END:
 
 #+findex: infovore-start
@@ -294,6 +306,7 @@ future fetch cycles from being scheduled.
 ** Manual fetching
 :PROPERTIES:
 :CUSTOM_ID: h:manual-fetching
+:ID:       88FEB527-C38F-4DAD-8849-72E933306645
 :END:
 
 #+findex: infovore-fetch-now
@@ -307,6 +320,7 @@ cycle.  It is also bound to =G= in the feed list
 ** Feed list commands
 :PROPERTIES:
 :CUSTOM_ID: h:feed-list-commands
+:ID:       ABBA152E-148F-4DB2-98D6-C052538C3B04
 :END:
 
 #+findex: infovore-list-show-item
@@ -372,6 +386,7 @@ The full keymap for ~infovore-list-mode~:
 ** Refreshing and filtering
 :PROPERTIES:
 :CUSTOM_ID: h:refreshing-and-filtering
+:ID:       EAB7A0B8-7937-4AB0-A9F2-6A12DCA9BF27
 :END:
 
 #+findex: infovore-list-refresh
@@ -389,6 +404,7 @@ first).  After refreshing, the item count is displayed in the echo area.
 ** Item detail commands
 :PROPERTIES:
 :CUSTOM_ID: h:item-detail-commands
+:ID:       9EDEDED1-A417-488C-B831-F162DD06AEFE
 :END:
 
 #+findex: infovore-show-item
@@ -436,6 +452,7 @@ The full keymap for ~infovore-show-mode~:
 ** Mode line indicator
 :PROPERTIES:
 :CUSTOM_ID: h:mode-line-indicator
+:ID:       5C840939-D648-4385-B645-7380B57EBFE0
 :END:
 
 #+findex: infovore-mode-line-mode
@@ -460,11 +477,13 @@ database at any time.
 * Functions
 :PROPERTIES:
 :CUSTOM_ID: h:functions
+:ID:       8D23AE8C-9368-42C2-8E37-B84DAF8742C9
 :END:
 
 ** Database management
 :PROPERTIES:
 :CUSTOM_ID: h:database-management
+:ID:       2AFD2C56-4B97-4C9F-9ACD-150E531FA38D
 :END:
 
 #+findex: infovore-db-ensure
@@ -482,6 +501,7 @@ file while Emacs is running.
 ** Item storage and retrieval
 :PROPERTIES:
 :CUSTOM_ID: h:item-storage-and-retrieval
+:ID:       EDF3A68D-E2A1-412F-9565-258D736299BE
 :END:
 
 #+findex: infovore-db-insert-item
@@ -530,6 +550,7 @@ this to display the unread count
 ** Token budget tracking
 :PROPERTIES:
 :CUSTOM_ID: h:token-budget-tracking
+:ID:       78CC7BEE-5F01-4580-BC70-05CBB292469A
 :END:
 
 #+findex: infovore-db-get-budget-tokens
@@ -552,6 +573,7 @@ non-nil ([[#h:ai-curation-settings][AI curation settings]]).
 ** AI scoring pipeline
 :PROPERTIES:
 :CUSTOM_ID: h:ai-scoring-pipeline
+:ID:       2E4CD703-2BC7-4411-97F4-6563FB32A816
 :END:
 
 #+findex: infovore-ai-score-item
@@ -577,6 +599,7 @@ cycle calls this function after inserting newly fetched items
 ** URL normalization and deduplication
 :PROPERTIES:
 :CUSTOM_ID: h:url-normalization
+:ID:       898794CD-CC30-4850-BA9F-49D93506FEAD
 :END:
 
 #+findex: infovore-normalize-url
@@ -590,6 +613,7 @@ via different tracking links is not stored twice.
 ** Logging
 :PROPERTIES:
 :CUSTOM_ID: h:logging
+:ID:       53DD5867-C47A-4D92-99B1-0D16C6FE33EB
 :END:
 
 #+findex: infovore-log
@@ -608,6 +632,7 @@ buffer.  Its default value is ="*infovore-log*"=.
 ** Fetch with retry
 :PROPERTIES:
 :CUSTOM_ID: h:fetch-with-retry
+:ID:       2D085051-7B89-49AD-AD2B-B34FEDFB2D73
 :END:
 
 #+findex: infovore-fetch-with-retry
@@ -622,6 +647,7 @@ across the package.
 ** Source protocol
 :PROPERTIES:
 :CUSTOM_ID: h:source-protocol
+:ID:       42BA454D-C58D-416E-A7E8-7F08A7E3EE45
 :END:
 
 #+findex: infovore-source-fetch
@@ -640,6 +666,7 @@ The generic function ~infovore-source-parse~ converts raw fetched data
 * Ebib integration
 :PROPERTIES:
 :CUSTOM_ID: h:ebib-integration
+:ID:       C2089C11-D164-426A-9D34-DA2C37AE0A6F
 :END:
 
 #+findex: infovore-ebib-save
@@ -667,16 +694,19 @@ entry point, so it is silently skipped when its dependencies are absent.
 * Indices
 :PROPERTIES:
 :CUSTOM_ID: h:indices
+:ID:       279C4329-1B72-4458-BA33-EA11814AF864
 :END:
 
 ** Function index
 :PROPERTIES:
 :INDEX: fn
 :CUSTOM_ID: h:function-index
+:ID:       DD4BAEE3-75D2-4D17-B3D2-41F52DD08F2A
 :END:
 
 ** Variable index
 :PROPERTIES:
 :INDEX: vr
 :CUSTOM_ID: h:variable-index
+:ID:       1991CD47-4C70-46D7-9AAA-DD4690C6320E
 :END:
