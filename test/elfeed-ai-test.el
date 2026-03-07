@@ -33,7 +33,11 @@
   (defun elfeed-tag (entry &rest tags)
     (dolist (tag tags)
       (unless (memq tag (elfeed-entry-tags entry))
-        (push tag (elfeed-entry-tags entry))))))
+        (push tag (elfeed-entry-tags entry)))))
+  (defun elfeed-untag (entry &rest tags)
+    (dolist (tag tags)
+      (setf (elfeed-entry-tags entry)
+            (delq tag (elfeed-entry-tags entry))))))
 
 (unless (featurep 'gptel)
   (provide 'gptel)

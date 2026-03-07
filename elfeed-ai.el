@@ -45,6 +45,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'elfeed)
 (require 'elfeed-search)
 (require 'elfeed-show)
@@ -262,6 +263,7 @@ return yesterday's date."
 
 ;;;; Cost tracking
 
+(defvar gptel-use-cache)
 (declare-function gptel-plus-compute-cost "gptel-plus")
 
 ;;;; Content extraction
@@ -412,16 +414,18 @@ CALLBACK is called with (score . summary) on success, or nil."
                           (when cost
                             (setf (elfeed-meta entry :ai-cost) cost))
                           (elfeed-tag entry elfeed-ai-scored-tag)
-                          (when (>= (car result)
-                                    elfeed-ai-relevance-threshold)
-                            (elfeed-tag entry elfeed-ai-score-tag)))
+                          (if (>= (car result)
+                                  elfeed-ai-relevance-threshold)
+                              (elfeed-tag entry elfeed-ai-score-tag)
+                            (elfeed-untag entry elfeed-ai-score-tag)))
                         (funcall callback result)))))))))
 
 ;;;; Queue processing
 
 (defun elfeed-ai--enqueue (entry)
   "Add ENTRY to the scoring queue and start processing if idle."
-  (unless (elfeed-tagged-p elfeed-ai-scored-tag entry)
+  (unless (or (elfeed-tagged-p elfeed-ai-scored-tag entry)
+              (memq entry elfeed-ai--pending-queue))
     (push entry elfeed-ai--pending-queue)
     (unless elfeed-ai--scoring-in-progress
       (elfeed-ai--process-queue))))
@@ -536,8 +540,9 @@ buffer displays AI-generated summaries above the original content."
 
 (defun elfeed-ai--enable ()
   "Enable elfeed-ai integrations."
-  (setq elfeed-ai--original-print-entry-function
-        elfeed-search-print-entry-function)
+  (unless elfeed-ai--original-print-entry-function
+    (setq elfeed-ai--original-print-entry-function
+          elfeed-search-print-entry-function))
   (setq elfeed-search-print-entry-function
         #'elfeed-ai-search-print-entry)
   (when elfeed-ai-auto-score
