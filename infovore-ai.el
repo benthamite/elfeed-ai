@@ -270,7 +270,10 @@ Stops early if the daily token budget is exhausted."
                            (setf (infovore-item-score item) score)
                            (setf (infovore-item-summary item) summary)
                            (setf (infovore-item-curated-p item) t)
-                           (infovore-db-update-item item)
+                           (infovore-db-update-item (infovore-item-id item)
+                                                    :score score
+                                                    :summary summary
+                                                    :curated-p t)
                            (setq scored-count (1+ scored-count))))
                        (funcall process-next (cdr remaining))))))))
         (funcall process-next items)))))
