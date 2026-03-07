@@ -8,14 +8,6 @@
 
 ;;; Code:
 
-;; elfeed-xml does not exist as a separate module in modern elfeed.
-;; The infovore code references it, so we stub it here for testing.
-(unless (featurep 'elfeed-xml)
-  (defun elfeed-xml-parse-region (start end)
-    "Stub: parse XML between START and END using built-in xml.el."
-    (xml-parse-region start end))
-  (provide 'elfeed-xml))
-
 ;; Stub gptel if not available (only the function used by infovore-ai).
 (unless (featurep 'gptel)
   (defun gptel-request (_prompt &rest _args)

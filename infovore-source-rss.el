@@ -4,21 +4,21 @@
 
 ;; Author: Pablo Stafforini
 ;; Keywords: comm, news
-;; Package-Requires: ((emacs "29.1") (elfeed "3.4.1"))
+;; Package-Requires: ((emacs "29.1"))
 
 ;; This file is NOT part of GNU Emacs.
 
 ;;; Commentary:
 
 ;; RSS/Atom source plugin for infovore.  Fetches and parses RSS 2.0 and
-;; Atom feeds using elfeed's XML parser.  Each feed URL is represented as
-;; an `infovore-source-rss' instance.
+;; Atom feeds using Emacs's built-in XML parser.  Each feed URL is
+;; represented as an `infovore-source-rss' instance.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'infovore-source)
-(require 'elfeed-xml)
+(require 'xml)
 
 ;;;; EIEIO class
 
@@ -58,17 +58,17 @@ Call CALLBACK with a list of `infovore-item' structs."
 
 (defun infovore-source-rss--extract-xml (buffer)
   "Extract and parse the XML body from an HTTP response BUFFER.
-Return the elfeed XML parse tree."
+Return the XML parse tree."
   (with-current-buffer buffer
     (goto-char (point-min))
     ;; Skip past the HTTP headers to the body.
     (when (re-search-forward "\r?\n\r?\n" nil t)
-      (elfeed-xml-parse-region (point) (point-max)))))
+      (xml-parse-region (point) (point-max)))))
 
 ;;;; Parse implementation
 
 (cl-defmethod infovore-source-parse ((source infovore-source-rss) raw-data)
-  "Parse elfeed XML tree RAW-DATA into `infovore-item' structs.
+  "Parse XML tree RAW-DATA into `infovore-item' structs.
 Handles both RSS 2.0 and Atom feed formats."
   (let ((source-id (infovore-source-id source))
         (items '()))

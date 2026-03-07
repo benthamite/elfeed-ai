@@ -4,7 +4,7 @@
 
 ;; Author: Pablo Stafforini
 ;; Keywords: comm, news
-;; Package-Requires: ((emacs "29.1") (elfeed "3.4.1"))
+;; Package-Requires: ((emacs "29.1"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -19,7 +19,7 @@
 
 (require 'cl-lib)
 (require 'infovore-source)
-(require 'elfeed-xml)
+(require 'xml)
 (require 'dom)
 
 ;;;; EIEIO class
@@ -66,16 +66,16 @@ Call CALLBACK with a list of `infovore-item' structs."
 
 (defun infovore-source-substack--extract-xml (buffer)
   "Extract and parse the XML body from an HTTP response BUFFER.
-Return the elfeed XML parse tree."
+Return the XML parse tree."
   (with-current-buffer buffer
     (goto-char (point-min))
     (when (re-search-forward "\r?\n\r?\n" nil t)
-      (elfeed-xml-parse-region (point) (point-max)))))
+      (xml-parse-region (point) (point-max)))))
 
 ;;;; Parse implementation
 
 (cl-defmethod infovore-source-parse ((source infovore-source-substack) raw-data)
-  "Parse elfeed XML tree RAW-DATA into `infovore-item' structs.
+  "Parse XML tree RAW-DATA into `infovore-item' structs.
 Handles both RSS 2.0 and Atom formats (Substack typically uses RSS 2.0)."
   (let ((source-id (infovore-source-id source))
         (publication (infovore-source-substack-publication source))

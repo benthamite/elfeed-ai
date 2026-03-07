@@ -4,7 +4,7 @@
 
 ;; Author: Pablo Stafforini
 ;; Keywords: comm, news
-;; Package-Requires: ((emacs "29.1") (gptel "0.9") (elfeed "3.4.1") (emacsql "4.0.0") (emacsql-sqlite "4.0.0"))
+;; Package-Requires: ((emacs "29.1") (gptel "0.9") (emacsql "4.0.0") (emacsql-sqlite "4.0.0"))
 ;; Version: 0.1.0
 
 ;; This file is NOT part of GNU Emacs.

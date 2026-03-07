@@ -4,7 +4,7 @@
 
 ;; Author: Pablo Stafforini
 ;; Keywords: comm, news
-;; Package-Requires: ((emacs "29.1") (elfeed "3.4.1"))
+;; Package-Requires: ((emacs "29.1"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -20,10 +20,7 @@
 (require 'json)
 (require 'infovore-source)
 
-;; elfeed-xml is only needed for the rss-bridge backend; require it softly
-;; so the file loads even when elfeed is not installed, as long as the user
-;; picks a different backend.
-(require 'elfeed-xml nil t)
+(require 'xml)
 
 ;;;; Custom variables
 
@@ -88,9 +85,6 @@ Call CALLBACK with a list of `infovore-item' structs."
    ((not infovore-twitter-rss-bridge-url)
     (infovore-log 'error "infovore-twitter-rss-bridge-url is not configured")
     (funcall callback nil))
-   ((not (featurep 'elfeed-xml))
-    (infovore-log 'error "elfeed-xml is required for the rss-bridge backend")
-    (funcall callback nil))
    (t
     (let* ((username (infovore-source-twitter-username source))
            (bridge-url (format "%s/?action=display&bridge=TwitterBridge&context=By+username&u=%s&format=Atom"
@@ -108,7 +102,7 @@ Call CALLBACK with a list of `infovore-item' structs."
                (let* ((xml (with-current-buffer buffer
                              (goto-char (point-min))
                              (when (re-search-forward "\r?\n\r?\n" nil t)
-                               (elfeed-xml-parse-region (point) (point-max)))))
+                               (xml-parse-region (point) (point-max)))))
                       (items (infovore-source-twitter--parse-atom xml src)))
                  (infovore-log 'info "Twitter (RSS-Bridge) parsed %d items for @%s"
                                (length items) username)
@@ -350,7 +344,7 @@ SOURCE is the `infovore-source-twitter' instance."
   "Parse RAW-DATA into `infovore-item' structs for SOURCE.
 RAW-DATA interpretation depends on the active backend.
 For the `api' and `scraper' backends, RAW-DATA is a JSON-parsed
-alist/vector.  For `rss-bridge', it is an elfeed XML parse tree."
+alist/vector.  For `rss-bridge', it is an XML parse tree."
   (pcase infovore-twitter-backend
     ('rss-bridge (infovore-source-twitter--parse-atom raw-data source))
     ('api        (infovore-source-twitter--parse-api-response raw-data source))

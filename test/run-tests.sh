@@ -13,7 +13,7 @@ ELPACA_BUILDS="$HOME/.emacs.d/elpaca/builds"
 
 # Build load-path arguments: project root + each dependency.
 LOAD_ARGS=(-L "$PROJECT_DIR" -L "$PROJECT_DIR/test")
-for dep in emacsql elfeed gptel compat; do
+for dep in emacsql gptel compat; do
   dep_dir="${ELPACA_BUILDS}/${dep}"
   if [ -d "$dep_dir" ]; then
     LOAD_ARGS+=(-L "$dep_dir")
