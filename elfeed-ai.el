@@ -260,6 +260,10 @@ return yesterday's date."
   "Return non-nil if the daily token budget is exhausted."
   (<= (elfeed-ai--budget-remaining) 0))
 
+;;;; Cost tracking
+
+(declare-function gptel-plus-compute-cost "gptel-plus")
+
 ;;;; Content extraction
 
 (defun elfeed-ai--entry-content (entry)
@@ -380,8 +384,10 @@ CALLBACK is called with (score . summary) on success, or nil."
     (let* ((prompt (elfeed-ai--build-prompt entry))
            (prompt-tokens (elfeed-ai--estimate-tokens prompt))
            (resolved (elfeed-ai--resolve-backend-and-model))
-           (gptel-backend (car resolved))
-           (gptel-model (cdr resolved)))
+           (backend (car resolved))
+           (model (cdr resolved))
+           (gptel-backend backend)
+           (gptel-model model))
       (gptel-request prompt
         :callback (lambda (response info)
                     (if (not response)
@@ -389,6 +395,9 @@ CALLBACK is called with (score . summary) on success, or nil."
                           (message "elfeed-ai: gptel request failed: %S" info)
                           (funcall callback nil))
                       (let* ((result (elfeed-ai--parse-response response))
+                             (cost (and (require 'gptel-plus nil t)
+                                        (fboundp 'gptel-plus-compute-cost)
+                                        (gptel-plus-compute-cost info model)))
                              (response-tokens
                               (elfeed-ai--estimate-tokens response))
                              (total-tokens (+ prompt-tokens response-tokens)))
@@ -396,6 +405,8 @@ CALLBACK is called with (score . summary) on success, or nil."
                         (when result
                           (setf (elfeed-meta entry :ai-score) (car result))
                           (setf (elfeed-meta entry :ai-summary) (cdr result))
+                          (when cost
+                            (setf (elfeed-meta entry :ai-cost) cost))
                           (elfeed-tag entry elfeed-ai-scored-tag)
                           (when (>= (car result)
                                     elfeed-ai-relevance-threshold)
@@ -484,7 +495,8 @@ CALLBACK is called with (score . summary) on success, or nil."
   (when-let* ((entry elfeed-show-entry)
               (summary (elfeed-meta entry :ai-summary)))
     (let ((inhibit-read-only t)
-          (score (elfeed-meta entry :ai-score)))
+          (score (elfeed-meta entry :ai-score))
+          (cost (elfeed-meta entry :ai-cost)))
       (save-excursion
         (goto-char (point-min))
         ;; Find the blank line separating header from content.
@@ -493,6 +505,7 @@ CALLBACK is called with (score . summary) on success, or nil."
           (insert
            (propertize "AI Summary" 'face 'elfeed-ai-summary-heading-face)
            (if score (format " (%.2f)" score) "")
+           (if cost (format " [$%.4f]" cost) "")
            "\n\n"
            summary
            "\n\n"
@@ -554,7 +567,10 @@ buffer displays AI-generated summaries above the original content."
      entry
      (lambda (result)
        (when result
-         (message "elfeed-ai: score %.2f" (car result))
+         (let ((cost (elfeed-meta entry :ai-cost)))
+           (if cost
+               (message "elfeed-ai: score %.2f (cost $%.4f)" (car result) cost)
+             (message "elfeed-ai: score %.2f" (car result))))
          (elfeed-ai--refresh-search)
          (when (derived-mode-p 'elfeed-show-mode)
            (elfeed-show-refresh)))))))
