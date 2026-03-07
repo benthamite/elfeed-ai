@@ -38,11 +38,6 @@
 
 ;;;; Customization
 
-(defgroup infovore nil
-  "AI-powered content curation for Emacs."
-  :group 'comm
-  :prefix "infovore-")
-
 (defcustom infovore-database-file
   (expand-file-name "infovore.db" user-emacs-directory)
   "Path to the SQLite database file."
@@ -260,40 +255,34 @@ Keywords:
 Return a list of `infovore-item' structs."
   (let* ((db (infovore-db-ensure))
          (conditions '())
-         (params '()))
-    ;; Build WHERE conditions and collect parameters.
+         (params '())
+         (param-idx 0))
     (when curated-only
       (push "curated = 1" conditions))
     (when min-score
-      (push (format "score >= %s" (number-to-string min-score)) conditions))
+      (cl-incf param-idx)
+      (push (format "score >= $s%d" param-idx) conditions)
+      (push min-score params))
     (when source-id
-      (push "source_id = ?" conditions)
+      (cl-incf param-idx)
+      (push (format "source_id = $s%d" param-idx) conditions)
       (push source-id params))
     (when source-type
-      (push "source_type = ?" conditions)
-      (push source-type params))
-    ;; Assemble SQL.
-    (let* ((where-str (if conditions
-                          (concat " WHERE "
-                                  (mapconcat #'identity
-                                             (nreverse conditions) " AND "))
-                        ""))
-           (order-str (format " ORDER BY %s"
-                              (or order-by "timestamp DESC")))
-           (limit-str (if limit (format " LIMIT %d" limit) ""))
-           (offset-str (if offset (format " OFFSET %d" offset) ""))
-           (sql (concat "SELECT * FROM items"
-                        where-str order-str limit-str offset-str))
-           ;; Replace ?-style placeholders with emacsql $s-style.
-           (param-idx 0)
-           (emacsql-sql (replace-regexp-in-string
-                         "\\?"
-                         (lambda (_)
-                           (setq param-idx (1+ param-idx))
-                           (format "$s%d" param-idx))
-                         sql))
-           (params-reversed (nreverse params))
-           (rows (apply #'emacsql db emacsql-sql params-reversed)))
+      (cl-incf param-idx)
+      (push (format "source_type = $s%d" param-idx) conditions)
+      (push (if (symbolp source-type) (symbol-name source-type) source-type)
+            params))
+    (let* ((where (if conditions
+                      (concat " WHERE "
+                              (mapconcat #'identity (nreverse conditions)
+                                         " AND "))
+                    ""))
+           (order (format " ORDER BY %s" (or order-by "timestamp DESC")))
+           (limit-clause (if limit (format " LIMIT %d" limit) ""))
+           (offset-clause (if offset (format " OFFSET %d" offset) ""))
+           (sql (concat "SELECT * FROM items" where order
+                        limit-clause offset-clause))
+           (rows (apply #'emacsql db sql (nreverse params))))
       (infovore-db--rows-to-items rows))))
 
 (defun infovore-db-uncurated-items (&optional limit)
