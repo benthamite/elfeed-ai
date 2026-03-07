@@ -47,6 +47,7 @@
 
 (require 'cl-lib)
 (require 'elfeed)
+(require 'elfeed-log)
 (require 'elfeed-search)
 (require 'elfeed-show)
 (require 'gptel)
@@ -126,6 +127,13 @@ When nil, defaults to `gptel-model'."
 (defcustom elfeed-ai-auto-score t
   "When non-nil, automatically score new entries as they arrive."
   :type 'boolean
+  :group 'elfeed-ai)
+
+(defcustom elfeed-ai-score-unscored-days 7
+  "Default number of days to look back when scoring unscored entries.
+Used by `elfeed-ai-score-unscored'.  With a prefix argument, the
+command prompts for a custom number of days."
+  :type 'integer
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-score-high-threshold 0.7
@@ -208,6 +216,12 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
 
 (defvar elfeed-ai--scoring-in-progress nil
   "Non-nil while the scoring queue is being processed.")
+
+(defvar elfeed-ai--batch-count 0
+  "Number of entries scored in the current batch.")
+
+(defvar elfeed-ai--batch-cost 0.0
+  "Accumulated cost for the current batch.")
 
 (defvar elfeed-ai--budget-cache nil
   "Cached budget data: alist with `date' and `tokens-used' keys.")
@@ -373,11 +387,11 @@ Example response:
                      (<= 0.0 score) (<= score 1.0)
                      summary (stringp summary))
                 (cons score summary)
-              (message "elfeed-ai: invalid response structure: %S" parsed)
+              (elfeed-log 'warn "elfeed-ai: invalid response structure: %S" parsed)
               nil))
         (error
-         (message "elfeed-ai: parse error: %s"
-                  (error-message-string err))
+         (elfeed-log 'error "elfeed-ai: parse error: %s"
+                    (error-message-string err))
          nil)))))
 
 ;;;; Scoring
@@ -400,14 +414,14 @@ or nil."
 CALLBACK is called with (score . summary) on success, or nil."
   (cond
    ((string-empty-p (elfeed-ai--resolve-profile))
-    (message "elfeed-ai: interest profile is empty")
+    (elfeed-log 'warn "elfeed-ai: interest profile is empty")
     (funcall callback nil))
    ((elfeed-ai-budget-exhausted-p)
-    (message "elfeed-ai: daily token budget exhausted")
+    (elfeed-log 'warn "elfeed-ai: daily token budget exhausted")
     (funcall callback nil))
    ((and (null (elfeed-ai--entry-content entry))
          (null (elfeed-entry-title entry)))
-    (message "elfeed-ai: entry has no title or content")
+    (elfeed-log 'debug "elfeed-ai: entry has no title or content")
     (funcall callback nil))
    (t
     (let* ((prompt (elfeed-ai--build-prompt entry))
@@ -425,7 +439,7 @@ CALLBACK is called with (score . summary) on success, or nil."
         :callback (lambda (response info)
                     (if (not response)
                         (progn
-                          (message "elfeed-ai: gptel request failed: %S" info)
+                          (elfeed-log 'error "elfeed-ai: gptel request failed: %S" info)
                           (funcall callback nil))
                       (let* ((result (elfeed-ai--parse-response response))
                              (cost (and (require 'gptel-plus nil t)
@@ -455,17 +469,30 @@ CALLBACK is called with (score . summary) on success, or nil."
           (elfeed-ai-budget-exhausted-p))
       (progn
         (setq elfeed-ai--scoring-in-progress nil)
-        (when (and elfeed-ai--pending-queue
-                   (elfeed-ai-budget-exhausted-p))
-          (message "elfeed-ai: budget exhausted, %d entries pending"
-                   (length elfeed-ai--pending-queue)))
+        (cond
+         ((and elfeed-ai--pending-queue
+               (elfeed-ai-budget-exhausted-p))
+          (elfeed-log 'warn "elfeed-ai: budget exhausted, %d entries pending"
+                      (length elfeed-ai--pending-queue)))
+         ((> elfeed-ai--batch-count 0)
+          (if (> elfeed-ai--batch-cost 0)
+              (message "elfeed-ai: scored %d entries (total cost $%.4f)"
+                       elfeed-ai--batch-count elfeed-ai--batch-cost)
+            (message "elfeed-ai: scored %d entries"
+                     elfeed-ai--batch-count))))
+        (setq elfeed-ai--batch-count 0
+              elfeed-ai--batch-cost 0.0)
         ;; Refresh search buffer to show updated scores.
         (elfeed-ai--refresh-search))
     (setq elfeed-ai--scoring-in-progress t)
     (let ((entry (pop elfeed-ai--pending-queue)))
       (elfeed-ai-score-entry
        entry
-       (lambda (_result)
+       (lambda (result)
+         (when result
+           (cl-incf elfeed-ai--batch-count)
+           (when-let ((cost (elfeed-meta entry :ai-cost)))
+             (cl-incf elfeed-ai--batch-cost cost)))
          (elfeed-ai--process-queue))))))
 
 (defun elfeed-ai--refresh-search ()
@@ -632,12 +659,22 @@ With prefix argument FORCE, re-score already scored entries."
              (length to-score) (- (length entries) (length to-score)))))
 
 ;;;###autoload
-(defun elfeed-ai-score-unscored ()
-  "Queue all unscored entries in the database for scoring."
-  (interactive)
-  (let ((count 0))
+(defun elfeed-ai-score-unscored (&optional days)
+  "Queue unscored entries from the last DAYS days for scoring.
+Defaults to `elfeed-ai-score-unscored-days'.  With a prefix
+argument, prompt for the number of days."
+  (interactive (list (if current-prefix-arg
+                        (read-number "Days to look back: "
+                                     elfeed-ai-score-unscored-days)
+                      elfeed-ai-score-unscored-days)))
+  (let ((count 0)
+        (cutoff (float-time
+                 (time-subtract (current-time)
+                                (* (or days elfeed-ai-score-unscored-days)
+                                   24 60 60)))))
     (with-elfeed-db-visit (entry _feed)
-      (unless (elfeed-tagged-p elfeed-ai-scored-tag entry)
+      (when (and (> (elfeed-entry-date entry) cutoff)
+                 (not (elfeed-tagged-p elfeed-ai-scored-tag entry)))
         (elfeed-ai--enqueue entry)
         (cl-incf count)))
     (message "elfeed-ai: queued %d entries for scoring" count)))
