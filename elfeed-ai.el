@@ -128,6 +128,18 @@ When nil, defaults to `gptel-model'."
   :type 'boolean
   :group 'elfeed-ai)
 
+(defcustom elfeed-ai-score-high-threshold 0.7
+  "Minimum score for the high-score face in the search buffer.
+Scores at or above this value use `elfeed-ai-score-high-face'."
+  :type 'float
+  :group 'elfeed-ai)
+
+(defcustom elfeed-ai-score-low-threshold 0.3
+  "Maximum score for the low-score face in the search buffer.
+Scores at or below this value use `elfeed-ai-score-low-face'."
+  :type 'float
+  :group 'elfeed-ai)
+
 ;;;; Option resolution
 
 (defun elfeed-ai--find-backend-for-model (model)
@@ -368,6 +380,19 @@ Example response:
 
 ;;;; Scoring
 
+(defun elfeed-ai--apply-result (entry result cost)
+  "Store scoring RESULT on ENTRY and update tags.
+RESULT is a (score . summary) cons cell.  COST is the request cost
+or nil."
+  (setf (elfeed-meta entry :ai-score) (car result))
+  (setf (elfeed-meta entry :ai-summary) (cdr result))
+  (when cost
+    (setf (elfeed-meta entry :ai-cost) cost))
+  (elfeed-tag entry elfeed-ai-scored-tag)
+  (if (>= (car result) elfeed-ai-relevance-threshold)
+      (elfeed-tag entry elfeed-ai-score-tag)
+    (elfeed-untag entry elfeed-ai-score-tag)))
+
 (defun elfeed-ai-score-entry (entry callback)
   "Score ENTRY asynchronously using gptel.
 CALLBACK is called with (score . summary) on success, or nil."
@@ -409,15 +434,7 @@ CALLBACK is called with (score . summary) on success, or nil."
                              (total-tokens (+ prompt-tokens response-tokens)))
                         (elfeed-ai--record-usage total-tokens)
                         (when result
-                          (setf (elfeed-meta entry :ai-score) (car result))
-                          (setf (elfeed-meta entry :ai-summary) (cdr result))
-                          (when cost
-                            (setf (elfeed-meta entry :ai-cost) cost))
-                          (elfeed-tag entry elfeed-ai-scored-tag)
-                          (if (>= (car result)
-                                  elfeed-ai-relevance-threshold)
-                              (elfeed-tag entry elfeed-ai-score-tag)
-                            (elfeed-untag entry elfeed-ai-score-tag)))
+                          (elfeed-ai--apply-result entry result cost))
                         (funcall callback result)))))))))
 
 ;;;; Queue processing
@@ -476,8 +493,10 @@ CALLBACK is called with (score . summary) on success, or nil."
          (score-str (if score (format "%4.2f" score) "  - "))
          (score-face (cond
                       ((null score) 'elfeed-ai-score-face)
-                      ((>= score 0.7) 'elfeed-ai-score-high-face)
-                      ((<= score 0.3) 'elfeed-ai-score-low-face)
+                      ((>= score elfeed-ai-score-high-threshold)
+                       'elfeed-ai-score-high-face)
+                      ((<= score elfeed-ai-score-low-threshold)
+                       'elfeed-ai-score-low-face)
                       (t 'elfeed-ai-score-face)))
          (score-width 6)
          (title-width (- (window-width) 10 score-width
