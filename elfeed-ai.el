@@ -113,9 +113,10 @@ Longer content is truncated."
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-model nil
-  "gptel model for AI scoring, or nil to use `gptel-model'."
+  "gptel model for AI scoring, or nil to use `gptel-model'.
+The value should be a symbol (e.g. `claude-sonnet-4-5-20250514')."
   :type '(choice (const :tag "Use gptel default" nil)
-                 (string :tag "Model name"))
+                 (symbol :tag "Model name"))
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-auto-score t
@@ -335,10 +336,10 @@ CALLBACK is called with (score . summary) on success, or nil."
     (funcall callback nil))
    (t
     (let* ((prompt (elfeed-ai--build-prompt entry))
-           (prompt-tokens (elfeed-ai--estimate-tokens prompt)))
+           (prompt-tokens (elfeed-ai--estimate-tokens prompt))
+           (gptel-backend (or elfeed-ai-backend gptel-backend))
+           (gptel-model (or elfeed-ai-model gptel-model)))
       (gptel-request prompt
-        :backend (or elfeed-ai-backend gptel-backend)
-        :model (or elfeed-ai-model gptel-model)
         :callback (lambda (response info)
                     (if (not response)
                         (progn
