@@ -84,41 +84,40 @@ Call CALLBACK with a list of `infovore-item' structs."
 
 (defun infovore-source-twitter--fetch-rss-bridge (source callback)
   "Fetch tweets for SOURCE via RSS-Bridge, then call CALLBACK with items."
-  (unless infovore-twitter-rss-bridge-url
+  (cond
+   ((not infovore-twitter-rss-bridge-url)
     (infovore-log 'error "infovore-twitter-rss-bridge-url is not configured")
-    (funcall callback nil)
-    (cl-return-from infovore-source-twitter--fetch-rss-bridge))
-  (unless (featurep 'elfeed-xml)
+    (funcall callback nil))
+   ((not (featurep 'elfeed-xml))
     (infovore-log 'error "elfeed-xml is required for the rss-bridge backend")
-    (funcall callback nil)
-    (cl-return-from infovore-source-twitter--fetch-rss-bridge))
-  (let* ((username (infovore-source-twitter-username source))
-         (bridge-url (format "%s/?action=display&bridge=TwitterBridge&context=By+username&u=%s&format=Atom"
-                             (string-trim-right infovore-twitter-rss-bridge-url "/")
-                             (url-hexify-string username)))
-         (src source))
-    (infovore-fetch-with-retry
-     bridge-url
-     (lambda (buffer)
-       (if (null buffer)
-           (progn
-             (infovore-log 'error "RSS-Bridge fetch failed for @%s" username)
-             (funcall callback nil))
-         (condition-case err
-             (let* ((xml (with-current-buffer buffer
-                           (goto-char (point-min))
-                           (when (re-search-forward "\r?\n\r?\n" nil t)
-                             (elfeed-xml-parse-region (point) (point-max)))))
-                    (items (infovore-source-twitter--parse-atom xml src)))
-               (infovore-log 'info "Twitter (RSS-Bridge) parsed %d items for @%s"
-                             (length items) username)
-               (funcall callback items))
-           (error
-            (infovore-log 'error "Twitter RSS-Bridge parse error for @%s: %S" username err)
-            (funcall callback nil))
-           (:success nil))
-         (when (buffer-live-p buffer)
-           (kill-buffer buffer)))))))
+    (funcall callback nil))
+   (t
+    (let* ((username (infovore-source-twitter-username source))
+           (bridge-url (format "%s/?action=display&bridge=TwitterBridge&context=By+username&u=%s&format=Atom"
+                               (string-trim-right infovore-twitter-rss-bridge-url "/")
+                               (url-hexify-string username)))
+           (src source))
+      (infovore-fetch-with-retry
+       bridge-url
+       (lambda (buffer)
+         (if (null buffer)
+             (progn
+               (infovore-log 'error "RSS-Bridge fetch failed for @%s" username)
+               (funcall callback nil))
+           (condition-case err
+               (let* ((xml (with-current-buffer buffer
+                             (goto-char (point-min))
+                             (when (re-search-forward "\r?\n\r?\n" nil t)
+                               (elfeed-xml-parse-region (point) (point-max)))))
+                      (items (infovore-source-twitter--parse-atom xml src)))
+                 (infovore-log 'info "Twitter (RSS-Bridge) parsed %d items for @%s"
+                               (length items) username)
+                 (funcall callback items))
+             (error
+              (infovore-log 'error "Twitter RSS-Bridge parse error for @%s: %S" username err)
+              (funcall callback nil)))
+           (when (buffer-live-p buffer)
+             (kill-buffer buffer)))))))))
 
 (defun infovore-source-twitter--parse-atom (xml source)
   "Parse Atom XML tree from RSS-Bridge into `infovore-item' structs.
@@ -165,40 +164,40 @@ SOURCE is the `infovore-source-twitter' instance."
 (defun infovore-source-twitter--fetch-api (source callback)
   "Fetch tweets for SOURCE via the official Twitter API v2.
 Call CALLBACK with items."
-  (unless infovore-twitter-api-bearer-token
-    (infovore-log 'error "infovore-twitter-api-bearer-token is not configured")
-    (funcall callback nil)
-    (cl-return-from infovore-source-twitter--fetch-api))
-  (let* ((username (infovore-source-twitter-username source))
-         (src source))
-    ;; Step 1: resolve username to user ID.
-    (infovore-source-twitter--api-get
-     (format "https://api.twitter.com/2/users/by/username/%s"
-             (url-hexify-string username))
-     (lambda (user-data)
-       (if (null user-data)
-           (progn
-             (infovore-log 'error "Twitter API: could not resolve user @%s" username)
-             (funcall callback nil))
-         (let ((user-id (cdr (assq 'id (cdr (assq 'data user-data))))))
-           (if (null user-id)
-               (progn
-                 (infovore-log 'error "Twitter API: no user ID in response for @%s" username)
-                 (funcall callback nil))
-             ;; Step 2: fetch tweets for the user ID.
-             (infovore-source-twitter--api-get
-              (format "https://api.twitter.com/2/users/%s/tweets?tweet.fields=created_at,author_id,text&max_results=20"
-                      user-id)
-              (lambda (tweets-data)
-                (if (null tweets-data)
-                    (progn
-                      (infovore-log 'error "Twitter API: tweet fetch failed for @%s" username)
-                      (funcall callback nil))
-                  (let ((items (infovore-source-twitter--parse-api-response
-                                tweets-data src)))
-                    (infovore-log 'info "Twitter API parsed %d items for @%s"
-                                  (length items) username)
-                    (funcall callback items))))))))))))
+  (if (not infovore-twitter-api-bearer-token)
+      (progn
+        (infovore-log 'error "infovore-twitter-api-bearer-token is not configured")
+        (funcall callback nil))
+    (let* ((username (infovore-source-twitter-username source))
+           (src source))
+      ;; Step 1: resolve username to user ID.
+      (infovore-source-twitter--api-get
+       (format "https://api.twitter.com/2/users/by/username/%s"
+               (url-hexify-string username))
+       (lambda (user-data)
+         (if (null user-data)
+             (progn
+               (infovore-log 'error "Twitter API: could not resolve user @%s" username)
+               (funcall callback nil))
+           (let ((user-id (cdr (assq 'id (cdr (assq 'data user-data))))))
+             (if (null user-id)
+                 (progn
+                   (infovore-log 'error "Twitter API: no user ID in response for @%s" username)
+                   (funcall callback nil))
+               ;; Step 2: fetch tweets for the user ID.
+               (infovore-source-twitter--api-get
+                (format "https://api.twitter.com/2/users/%s/tweets?tweet.fields=created_at,author_id,text&max_results=20"
+                        user-id)
+                (lambda (tweets-data)
+                  (if (null tweets-data)
+                      (progn
+                        (infovore-log 'error "Twitter API: tweet fetch failed for @%s" username)
+                        (funcall callback nil))
+                    (let ((items (infovore-source-twitter--parse-api-response
+                                  tweets-data src)))
+                      (infovore-log 'info "Twitter API parsed %d items for @%s"
+                                    (length items) username)
+                      (funcall callback items)))))))))))))
 
 (defun infovore-source-twitter--api-get (url callback)
   "Make an authenticated GET request to URL using the Twitter API bearer token.
@@ -267,42 +266,42 @@ SOURCE is the `infovore-source-twitter' instance."
 (defun infovore-source-twitter--fetch-scraper (source callback)
   "Fetch tweets for SOURCE via an external scraper command.
 Call CALLBACK with items."
-  (unless infovore-twitter-scraper-command
-    (infovore-log 'error "infovore-twitter-scraper-command is not configured")
-    (funcall callback nil)
-    (cl-return-from infovore-source-twitter--fetch-scraper))
-  (let* ((username (infovore-source-twitter-username source))
-         (command infovore-twitter-scraper-command)
-         (src source)
-         (output-buffer (generate-new-buffer " *infovore-scraper*")))
-    (infovore-log 'info "Running scraper for @%s: %s %s" username command username)
-    (set-process-sentinel
-     (start-process "infovore-scraper" output-buffer command username)
-     (lambda (process _event)
-       (if (not (eq (process-exit-status process) 0))
-           (progn
-             (infovore-log 'error "Scraper exited with status %d for @%s"
-                           (process-exit-status process) username)
-             (when (buffer-live-p output-buffer)
-               (kill-buffer output-buffer))
-             (funcall callback nil))
-         (condition-case err
-             (let* ((json-data
-                     (with-current-buffer output-buffer
-                       (goto-char (point-min))
-                       (json-read)))
-                    (items (infovore-source-twitter--parse-scraper-output
-                            json-data src)))
-               (infovore-log 'info "Scraper parsed %d items for @%s"
-                             (length items) username)
+  (if (not infovore-twitter-scraper-command)
+      (progn
+        (infovore-log 'error "infovore-twitter-scraper-command is not configured")
+        (funcall callback nil))
+    (let* ((username (infovore-source-twitter-username source))
+           (command infovore-twitter-scraper-command)
+           (src source)
+           (output-buffer (generate-new-buffer " *infovore-scraper*")))
+      (infovore-log 'info "Running scraper for @%s: %s %s" username command username)
+      (set-process-sentinel
+       (start-process "infovore-scraper" output-buffer command username)
+       (lambda (process _event)
+         (if (not (eq (process-exit-status process) 0))
+             (progn
+               (infovore-log 'error "Scraper exited with status %d for @%s"
+                             (process-exit-status process) username)
                (when (buffer-live-p output-buffer)
                  (kill-buffer output-buffer))
-               (funcall callback items))
-           (error
-            (infovore-log 'error "Scraper JSON parse error for @%s: %S" username err)
-            (when (buffer-live-p output-buffer)
-              (kill-buffer output-buffer))
-            (funcall callback nil))))))))
+               (funcall callback nil))
+           (condition-case err
+               (let* ((json-data
+                       (with-current-buffer output-buffer
+                         (goto-char (point-min))
+                         (json-read)))
+                      (items (infovore-source-twitter--parse-scraper-output
+                              json-data src)))
+                 (infovore-log 'info "Scraper parsed %d items for @%s"
+                               (length items) username)
+                 (when (buffer-live-p output-buffer)
+                   (kill-buffer output-buffer))
+                 (funcall callback items))
+             (error
+              (infovore-log 'error "Scraper JSON parse error for @%s: %S" username err)
+              (when (buffer-live-p output-buffer)
+                (kill-buffer output-buffer))
+              (funcall callback nil)))))))))
 
 (defun infovore-source-twitter--parse-scraper-output (json-data source)
   "Parse scraper JSON-DATA into `infovore-item' structs.
