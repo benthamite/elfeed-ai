@@ -106,6 +106,18 @@ Longer content is truncated."
   :type 'symbol
   :group 'elfeed-ai)
 
+(defcustom elfeed-ai-backend nil
+  "gptel backend for AI scoring, or nil to use `gptel-backend'."
+  :type '(choice (const :tag "Use gptel default" nil)
+                 (sexp :tag "gptel backend object"))
+  :group 'elfeed-ai)
+
+(defcustom elfeed-ai-model nil
+  "gptel model for AI scoring, or nil to use `gptel-model'."
+  :type '(choice (const :tag "Use gptel default" nil)
+                 (string :tag "Model name"))
+  :group 'elfeed-ai)
+
 (defcustom elfeed-ai-auto-score t
   "When non-nil, automatically score new entries as they arrive."
   :type 'boolean
@@ -325,6 +337,8 @@ CALLBACK is called with (score . summary) on success, or nil."
     (let* ((prompt (elfeed-ai--build-prompt entry))
            (prompt-tokens (elfeed-ai--estimate-tokens prompt)))
       (gptel-request prompt
+        :backend (or elfeed-ai-backend gptel-backend)
+        :model (or elfeed-ai-model gptel-model)
         :callback (lambda (response info)
                     (if (not response)
                         (progn
