@@ -235,10 +235,8 @@ for source type, author, title, relevance score, and timestamp.
 
 ;;;; Entry point
 
-;;;###autoload
-(defun infovore ()
+(defun infovore-list-open ()
   "Open the infovore feed list buffer."
-  (interactive)
   (let ((buf (get-buffer-create "*infovore*")))
     (switch-to-buffer buf)
     (unless (derived-mode-p 'infovore-list-mode)
