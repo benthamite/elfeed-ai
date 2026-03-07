@@ -1,712 +1,221 @@
-#+title: Infovore: AI-powered content curation for Emacs
+#+title: elfeed-ai: AI-powered content curation for elfeed
 #+author: Pablo Stafforini
-#+email: pablo@stafforini.com
 #+language: en
 #+options: ':t toc:t author:t email:t num:t
 #+startup: content
-#+export_file_name: infovore.info
-#+texinfo_filename: infovore.info
+#+export_file_name: elfeed-ai.info
+#+texinfo_filename: elfeed-ai.info
 #+texinfo_dir_category: Emacs misc features
-#+texinfo_dir_title: Infovore: (infovore)
-#+texinfo_dir_desc: AI-powered content curation for Emacs
+#+texinfo_dir_title: elfeed-ai: (elfeed-ai)
+#+texinfo_dir_desc: AI-powered content curation for elfeed
 
-This manual describes the features and customization options for the Emacs Lisp package =infovore=.
+This manual describes the features and customization options for the Emacs Lisp package =elfeed-ai=.
 
 * Overview
 :PROPERTIES:
 :CUSTOM_ID: h:overview
-:ID:       00C82973-051A-4BB4-AA48-3FF493EF7AC0
 :END:
 
-Infovore is an AI-powered content aggregator and curator that runs
-entirely inside Emacs.  It fetches content from user-configured sources
---- Twitter accounts, RSS feeds, Substack newsletters --- stores
-everything in a local SQLite database, uses an AI model (via =gptel=) to
-score each item for relevance against a natural-language interest
-profile, and presents the curated results in an elfeed-style split-pane
-interface.
+elfeed-ai adds AI-powered content curation to [[https://github.com/skeeto/elfeed][elfeed]], the Emacs
+feed reader.  It uses [[https://github.com/karthink/gptel][gptel]] to score each entry for relevance against
+a natural-language interest profile, tags entries that meet a
+configurable threshold, displays scores as a column in the search
+buffer, and injects AI-generated summaries into the show buffer.
 
 The package solves the problem of information overload: rather than
-manually checking dozens of feeds and accounts, you describe your
-interests once, and infovore continuously fetches, evaluates, and
-surfaces only the content that matters to you.  Items that score above a
-configurable relevance threshold appear in the feed list; everything
-else is stored but hidden from the default view.
+manually scanning every entry in your feeds, you describe your
+interests once, and elfeed-ai continuously evaluates new entries and
+surfaces only the content that matters to you.  Entries that score
+above a configurable relevance threshold are tagged =ai-relevant=,
+which you can use in elfeed's standard search filter syntax.
 
-Infovore is organized around several cooperating modules:
+elfeed-ai integrates with elfeed through three mechanisms:
 
-- *Source plugins* fetch content asynchronously from different platforms.
-  Each source type (RSS, Twitter, Substack) is implemented as an EIEIO
-  class inheriting from an abstract base class defined in
-  =infovore-source.el=.  New source types can be added by subclassing
-  and implementing two generic methods.
+- *Automatic scoring* via =elfeed-new-entry-hook=.  When new entries
+  arrive during an elfeed update, they are queued and scored
+  asynchronously one at a time.  Each scored entry receives an AI
+  relevance score and a brief summary, stored as =elfeed-meta=
+  properties.
 
-- *Database layer* (=infovore-db.el=) manages all persistence through
-  =emacsql=.  It stores fetched items, tracks
-  read/starred/curated state, and maintains a daily token budget ledger.
+- *Search buffer column*.  A custom
+  =elfeed-search-print-entry-function= adds a score column between
+  the date and title, with color-coded faces for high and low scores.
 
-- *AI curation* (=infovore-ai.el=) handles the scoring pipeline.  For
-  each uncurated item, it constructs a prompt containing the user's
-  interest profile and the item's content, sends it to the configured
-  =gptel= backend, parses the JSON response to extract a relevance score
-  and a summary, and updates the database.  A daily token budget
-  prevents runaway API costs.
+- *Show buffer summary*.  After-advice on =elfeed-show-refresh=
+  injects the AI-generated summary above the original content, giving
+  you a quick overview before reading the full entry.
 
-- *Feed list view* (=infovore-list.el=) displays curated items in a
-  =tabulated-list-mode= buffer with columns for source type, author,
-  title, score, and relative timestamp.
+A daily token budget prevents runaway API costs.  Token usage is
+estimated heuristically and tracked in a small persistence file.
 
-- *Item detail view* (=infovore-show.el=) renders either the AI-generated
-  summary or the original content (with HTML rendered via =shr=) in a
-  split buffer below the feed list.
+* Quick start
+:PROPERTIES:
+:CUSTOM_ID: h:quick-start
+:END:
 
-- *Mode line indicator* (=infovore-modeline.el=) shows the count of
-  unread curated items as =[IV:N]= in the global mode line.
+#+begin_src emacs-lisp
+(require 'elfeed-ai)
 
-- *Ebib integration* (=infovore-ebib.el=) is an optional module that
-  lets you save an item's citation metadata to an =ebib= bibliography
-  database via =zotra=.
+(setq elfeed-ai-interest-profile
+      "AI safety, Emacs, functional programming, philosophy of mind,
+       effective altruism, longevity research")
 
-The core dependencies are =gptel= (AI backend), =elfeed= (XML parsing
-only), =emacsql= (database), and Emacs 29.1 or
-later (for native =libxml= support and =shr=).
+(elfeed-ai-mode 1)
+#+end_src
+
+New entries are scored automatically.  Use =+ai-relevant= in your
+elfeed search filter to see only curated content:
+
+#+begin_example
++ai-relevant +unread
+#+end_example
 
 * User options
 :PROPERTIES:
 :CUSTOM_ID: h:user-options
-:ID:       65E726B8-4A50-47F7-B493-A00C8DC974FC
 :END:
 
-** Sources configuration
+** Interest profile
 :PROPERTIES:
-:CUSTOM_ID: h:sources-configuration
-:ID:       E3C1F457-1037-4949-92E8-6E8445B1D7B1
+:CUSTOM_ID: h:interest-profile
 :END:
 
-#+vindex: infovore-sources
-The user option ~infovore-sources~ defines the list of content sources
-that infovore monitors.  Each element is a property list with at least a
-~:type~ key specifying the source type (~rss~, ~twitter~, or ~substack~)
-and type-specific keys providing the necessary identifiers.
-
-The default value is an empty list.  The accepted type is a list of
-plists.  You must populate this variable for infovore to have anything
-to fetch.  A typical configuration looks like this:
-
-#+begin_src emacs-lisp
-(setq infovore-sources
-      '((:type rss :url "https://example.com/feed.xml")
-        (:type twitter :username "elikiln")
-        (:type substack :publication "astralcodexten")))
-#+end_src
-
-Each source type requires different keys:
-
-- ~rss~ --- requires ~:url~ (the feed URL).
-- ~twitter~ --- requires ~:username~ (without the =@= prefix).
-- ~substack~ --- requires ~:publication~ (the subdomain name, e.g.
-  ="astralcodexten"= for =astralcodexten.substack.com=).
-
-All types accept an optional ~:name~ key for a custom display name;
-otherwise the name is derived from the identifier.
-
-** AI curation settings
-:PROPERTIES:
-:CUSTOM_ID: h:ai-curation-settings
-:ID:       DB7EE1EC-F021-45E8-97B7-AA8F1424E972
-:END:
-
-#+vindex: infovore-interest-profile
-#+vindex: infovore-relevance-threshold
-#+vindex: infovore-daily-token-budget
-#+vindex: infovore-budget-reset-hour
-The user option ~infovore-interest-profile~ is a free-form string
+#+vindex: elfeed-ai-interest-profile
+The user option ~elfeed-ai-interest-profile~ is a free-form string
 describing your interests in natural language.  This string is included
-verbatim in every AI scoring prompt, so the more specific and
-descriptive it is, the better the AI can judge relevance.  The default
-value is an empty string.  When left empty, AI scoring is skipped
-entirely and items remain uncurated.  A good profile might look like:
+verbatim in every AI scoring prompt.  The more specific and descriptive
+it is, the better the AI can judge relevance.  When empty, scoring is
+skipped entirely.
 
-#+begin_src emacs-lisp
-(setq infovore-interest-profile
-      "AI safety, Emacs, functional programming, philosophy of mind,
-       effective altruism, longevity research")
-#+end_src
-
-The user option ~infovore-relevance-threshold~ sets the minimum AI score
-(a float between 0.0 and 1.0) for an item to appear in the default
-curated feed view.  The default value is ~0.5~.  Lowering this value
-shows more items at the cost of including less relevant content;
-raising it produces a tighter, more selective feed.  This threshold is
-used by ~infovore-list-refresh~ when filtering items
-([[#h:refreshing-and-filtering][Refreshing and filtering]]).
-
-The user option ~infovore-daily-token-budget~ caps the estimated number
-of tokens that infovore will consume per day for AI curation.  The
-default value is ~100000~.  Token usage is estimated heuristically (one
-token per four characters) and tracked both in memory and in the
-database.  When the budget is exhausted, remaining uncurated items are
-deferred to the next budget period.  You would increase this value if
-you have many sources and want more items scored per day, or decrease it
-to control API costs.
-
-The user option ~infovore-budget-reset-hour~ specifies the hour of the
-day (0--23) at which the daily token budget resets.  The default value is
-~0~ (midnight).  If you typically use Emacs late at night, setting this
-to a later hour (e.g. ~4~) ensures your budget period aligns with your
-usage pattern rather than resetting mid-session.
-
-** Twitter backend settings
+** Relevance threshold
 :PROPERTIES:
-:CUSTOM_ID: h:twitter-backend-settings
-:ID:       0CA48913-2A86-4871-9924-FD02E3C11242
+:CUSTOM_ID: h:relevance-threshold
 :END:
 
-#+vindex: infovore-twitter-backend
-#+vindex: infovore-twitter-rss-bridge-url
-#+vindex: infovore-twitter-api-bearer-token
-#+vindex: infovore-twitter-scraper-command
-The user option ~infovore-twitter-backend~ selects which method infovore
-uses to fetch tweets.  It accepts one of three symbols:
+#+vindex: elfeed-ai-relevance-threshold
+The user option ~elfeed-ai-relevance-threshold~ sets the minimum AI
+score (a float between 0.0 and 1.0) for an entry to receive the
+~elfeed-ai-score-tag~ tag.  The default value is ~0.5~.
 
-- ~rss-bridge~ (the default) --- fetches tweets as an Atom feed from a
-  self-hosted RSS-Bridge instance.  This is the recommended approach.
-- ~api~ --- uses the official Twitter API v2 with a bearer token.
-- ~scraper~ --- shells out to an external command-line tool.
-
-The user option ~infovore-twitter-rss-bridge-url~ specifies the base URL
-of your RSS-Bridge instance (e.g.
-="https://rss-bridge.example.com"=).  It is required when
-~infovore-twitter-backend~ is set to ~rss-bridge~.  The default value is
-~nil~.
-
-The user option ~infovore-twitter-api-bearer-token~ holds the bearer
-token for the official Twitter API v2.  It is required when
-~infovore-twitter-backend~ is set to ~api~.  The default value is ~nil~.
-You obtain this token from the Twitter Developer Portal.
-
-The user option ~infovore-twitter-scraper-command~ specifies the
-executable name or path of an external tweet scraper.  It is required
-when ~infovore-twitter-backend~ is set to ~scraper~.  The default value
-is ~nil~.  The command is called with the Twitter username as its sole
-argument and must write a JSON array of tweet objects to standard output.
-Each object should contain at least ~id~, ~text~, ~created_at~, and
-~url~ keys.
-
-** Scheduling settings
+** Token budget
 :PROPERTIES:
-:CUSTOM_ID: h:scheduling-settings
-:ID:       B5739287-59BE-472E-93C5-07D1B12F6336
+:CUSTOM_ID: h:token-budget
 :END:
 
-#+vindex: infovore-fetch-interval
-The user option ~infovore-fetch-interval~ controls how many minutes
-elapse between automatic fetch cycles.  The default value is ~60~.  The
-type is an integer.  A lower value means more frequent fetching (and
-potentially more API usage); a higher value reduces resource
-consumption.  This option takes effect when ~infovore-start~ is called
-([[#h:starting-and-stopping][Starting and stopping]]).
+#+vindex: elfeed-ai-daily-token-budget
+#+vindex: elfeed-ai-budget-reset-hour
+#+vindex: elfeed-ai-budget-file
+The user option ~elfeed-ai-daily-token-budget~ caps the estimated
+number of tokens consumed per day.  The default is ~100000~.  Token
+usage is estimated as one token per four characters.
 
-** Database settings
+The user option ~elfeed-ai-budget-reset-hour~ specifies the hour
+(0--23) when the daily budget resets.  The default is ~0~ (midnight).
+
+The user option ~elfeed-ai-budget-file~ specifies the file used to
+persist daily token usage across sessions.
+
+** Content length
 :PROPERTIES:
-:CUSTOM_ID: h:database-settings
-:ID:       80093376-B1F1-4D64-A384-2F302AEC04F0
+:CUSTOM_ID: h:content-length
 :END:
 
-#+vindex: infovore-database-file
-The user option ~infovore-database-file~ specifies the path to the
-SQLite database file.  The default value is =infovore.db= inside
-~user-emacs-directory~.  The type is a file path.  You might change this
-if you want the database stored on a different disk or outside your
-Emacs configuration directory.  The database is created automatically on
-first use.
+#+vindex: elfeed-ai-max-content-length
+The user option ~elfeed-ai-max-content-length~ sets the maximum number
+of characters of entry content sent to the AI.  Longer content is
+truncated.  The default is ~4000~.
 
-** Error handling settings
+** Tags
 :PROPERTIES:
-:CUSTOM_ID: h:error-handling-settings
-:ID:       D574B788-2C0E-4D6D-8DCA-588292592E23
+:CUSTOM_ID: h:tags
 :END:
 
-#+vindex: infovore-max-retries
-#+vindex: infovore-retry-base-delay
-The user option ~infovore-max-retries~ sets the maximum number of retry
-attempts when a fetch request fails.  The default value is ~3~.  The
-type is an integer.  After all retries are exhausted, the source is
-skipped for the current fetch cycle and the failure is logged.
+#+vindex: elfeed-ai-score-tag
+#+vindex: elfeed-ai-scored-tag
+The user option ~elfeed-ai-score-tag~ is the tag added to entries that
+score above the threshold.  The default is ~ai-relevant~.
 
-The user option ~infovore-retry-base-delay~ sets the base delay in
-seconds for exponential backoff between retries.  The default value is
-~30~.  The delay for attempt /N/ is calculated as ~(* base-delay (expt
-4 N))~, yielding intervals of 30 seconds, 120 seconds, and 480 seconds
-with the default base delay.  You would increase this if your sources
-are rate-limited and need longer cool-down periods.
+The user option ~elfeed-ai-scored-tag~ is the tag added to all entries
+after scoring, regardless of their score.  The default is ~ai-scored~.
 
-** Feed list display settings
+** Auto-scoring
 :PROPERTIES:
-:CUSTOM_ID: h:feed-list-display-settings
-:ID:       DB2C6B58-6FA9-4A8D-B2CD-1EB6C2CE3190
+:CUSTOM_ID: h:auto-scoring
 :END:
 
-#+vindex: infovore-list-format
-The user option ~infovore-list-format~ controls the columns displayed in
-the feed list buffer.  Each element is a list of ~(FIELD WIDTH
-SORTABLE-P)~.  The default value is:
-
-#+begin_src emacs-lisp
-'((:source 6 t) (:author 20 t) (:title 0 t) (:score 5 t) (:time 12 t))
-#+end_src
-
-Available fields are ~:source~ (type icon), ~:author~, ~:title~,
-~:score~ (relevance), and ~:time~ (relative timestamp).  A width of ~0~
-means the column expands to fill available space.  You can reorder,
-remove, or resize columns to suit your workflow.
+#+vindex: elfeed-ai-auto-score
+The user option ~elfeed-ai-auto-score~ controls whether new entries
+are automatically queued for scoring.  The default is ~t~.  Set to
+~nil~ if you prefer to score entries manually.
 
 * Commands
 :PROPERTIES:
 :CUSTOM_ID: h:commands
-:ID:       9A3240C4-973D-4470-98B0-CDA837427535
 :END:
 
-** Opening the feed
+** Enabling the mode
 :PROPERTIES:
-:CUSTOM_ID: h:opening-the-feed
-:ID:       A3BE2BA8-ACE2-4DEC-B658-2AADB89CD0DA
+:CUSTOM_ID: h:enabling-the-mode
 :END:
 
-#+findex: infovore
-The command ~infovore~ is the main entry point.  It opens (or switches
-to) the =*infovore*= buffer, which displays the curated feed list.  On
-first invocation it initializes the database and instantiates source
-objects from ~infovore-sources~.  Subsequent calls simply switch to the
-existing buffer and refresh the displayed items.
+#+findex: elfeed-ai-mode
+The command ~elfeed-ai-mode~ is a global minor mode that activates all
+elfeed-ai integrations: automatic scoring of new entries, the score
+column in the search buffer, and summary injection in the show buffer.
 
-This command does not start the automatic fetch timer.  To begin
-periodic fetching, call ~infovore-start~ separately
-([[#h:starting-and-stopping][Starting and stopping]]).
-
-** Starting and stopping
+** Manual scoring
 :PROPERTIES:
-:CUSTOM_ID: h:starting-and-stopping
-:ID:       CDF83AEE-4EE1-42EA-8579-FA7D559B5398
+:CUSTOM_ID: h:manual-scoring
 :END:
 
-#+findex: infovore-start
-#+findex: infovore-stop
-The command ~infovore-start~ activates the automatic fetch timer.  It
-instantiates all configured sources, opens the database, and schedules
-periodic fetch cycles at the interval specified by
-~infovore-fetch-interval~ ([[#h:scheduling-settings][Scheduling settings]]).  The first fetch cycle
-runs immediately.  If a timer is already active, it is cancelled and
-replaced.  A confirmation message is displayed in the echo area.
+#+findex: elfeed-ai-score-entry-at-point
+#+findex: elfeed-ai-score-selected
+#+findex: elfeed-ai-score-unscored
+The command ~elfeed-ai-score-entry-at-point~ scores the entry at point
+in either the search or show buffer.
 
-The command ~infovore-stop~ cancels the automatic fetch timer.  It does
-not close the database or destroy the feed list buffer; it simply stops
-future fetch cycles from being scheduled.
+The command ~elfeed-ai-score-selected~ queues all selected entries in
+the search buffer for scoring.
 
-** Manual fetching
+The command ~elfeed-ai-score-unscored~ walks the entire elfeed database
+and queues all entries that lack the ~elfeed-ai-scored-tag~ tag.
+
+** Budget status
 :PROPERTIES:
-:CUSTOM_ID: h:manual-fetching
-:ID:       88FEB527-C38F-4DAD-8849-72E933306645
+:CUSTOM_ID: h:budget-status
 :END:
 
-#+findex: infovore-fetch-now
-The command ~infovore-fetch-now~ triggers an immediate fetch cycle
-outside the normal timer schedule.  If a fetch cycle is already in
-progress, it displays a message and does nothing.  This is useful for
-pulling in new content on demand without waiting for the next scheduled
-cycle.  It is also bound to =G= in the feed list
-([[#h:feed-list-commands][Feed list commands]]).
+#+findex: elfeed-ai-budget-status
+The command ~elfeed-ai-budget-status~ displays the current daily token
+usage in the echo area.
 
-** Feed list commands
+* Faces
 :PROPERTIES:
-:CUSTOM_ID: h:feed-list-commands
-:ID:       ABBA152E-148F-4DB2-98D6-C052538C3B04
+:CUSTOM_ID: h:faces
 :END:
 
-#+findex: infovore-list-show-item
-#+findex: infovore-list-browse-url
-#+findex: infovore-list-toggle-read
-#+findex: infovore-list-toggle-starred
-#+findex: infovore-list-refresh
-#+findex: infovore-list-show-all
-#+findex: infovore-list-show-curated
-The following commands are available in ~infovore-list-mode~, the major
-mode for the =*infovore*= feed list buffer.
-
-The command ~infovore-list-show-item~, bound to =RET=, opens the item at
-point in the detail view below the feed list
-([[#h:item-detail-commands][Item detail commands]]).  If no item is at point, it signals an error.
-
-The command ~infovore-list-browse-url~, bound to =b=, opens the original
-URL of the item at point in the default web browser via ~browse-url~.
-If the item has no URL, it signals an error.
-
-The command ~infovore-list-toggle-read~, bound to =r=, toggles the
-read/unread state of the item at point.  The new state is persisted to
-the database immediately and the list is refreshed to update the visual
-styling.  Read items are displayed with ~infovore-read-face~ (inherits
-from ~shadow~), making them visually dimmed.
-
-The command ~infovore-list-toggle-starred~, bound to =s=, toggles the
-starred state of the item at point.  Starred items are displayed with
-~infovore-starred-face~ (inherits from ~warning~, bold).  The state is
-persisted to the database immediately.
-
-The command ~infovore-list-refresh~, bound to =g=, re-queries the
-database and repopulates the list.  In the default curated view, it
-shows only items where ~curated~ is true and ~score~ is at or above
-~infovore-relevance-threshold~.  In the "show all" view, it displays
-every item regardless of curation status.
-
-The command ~infovore-list-show-all~, bound to =+=, switches the feed
-list to display all items including uncurated ones.  This is useful for
-reviewing everything that has been fetched.
-
-The command ~infovore-list-show-curated~, bound to =-=, switches back to
-the default curated view, showing only items that have been scored and
-meet the relevance threshold.
-
-The full keymap for ~infovore-list-mode~:
-
-| Key   | Command                          |
-|-------+----------------------------------|
-| =RET= | ~infovore-list-show-item~        |
-| =b=   | ~infovore-list-browse-url~       |
-| =r=   | ~infovore-list-toggle-read~      |
-| =s=   | ~infovore-list-toggle-starred~   |
-| =g=   | ~infovore-list-refresh~          |
-| =G=   | ~infovore-fetch-now~             |
-| =q=   | ~quit-window~                    |
-| =S=   | ~infovore-ebib-save~             |
-| =+=   | ~infovore-list-show-all~         |
-| =-=   | ~infovore-list-show-curated~     |
-| =n=   | ~next-line~                      |
-| =p=   | ~previous-line~                  |
-
-** Refreshing and filtering
-:PROPERTIES:
-:CUSTOM_ID: h:refreshing-and-filtering
-:ID:       EAB7A0B8-7937-4AB0-A9F2-6A12DCA9BF27
-:END:
-
-#+findex: infovore-list-refresh
-The command ~infovore-list-refresh~ queries the database and rebuilds the
-feed list.  The query depends on the current view mode:
-
-- In the default curated view, items are filtered to those where
-  ~curated~ is true and ~score~ is at or above
-  ~infovore-relevance-threshold~ ([[#h:ai-curation-settings][AI curation settings]]).
-- In the "show all" view (toggled with =+=), all items are shown.
-
-In both cases, items are sorted by timestamp in descending order (newest
-first).  After refreshing, the item count is displayed in the echo area.
-
-** Item detail commands
-:PROPERTIES:
-:CUSTOM_ID: h:item-detail-commands
-:ID:       9EDEDED1-A417-488C-B831-F162DD06AEFE
-:END:
-
-#+findex: infovore-show-item
-#+findex: infovore-show-toggle-view
-#+findex: infovore-show-browse-url
-#+findex: infovore-show-next
-#+findex: infovore-show-prev
-The following commands are available in ~infovore-show-mode~, the major
-mode for the =*infovore-entry*= detail buffer.
-
-The function ~infovore-show-item~ opens an item in the detail view.  It
-creates or reuses the =*infovore-entry*= buffer, displays it in a
-window below the current one (occupying 40% of the frame height), and
-renders the item's summary by default.  The header section shows the
-title, author, source type, date, score, and a clickable URL.
-
-The command ~infovore-show-toggle-view~, bound to =TAB= and =t=,
-toggles between the summary and original content views.  In summary
-mode, the AI-generated summary is displayed as plain text.  In original
-mode, the full content is rendered --- HTML content is processed through
-=shr= for rich display, while plain text is inserted directly.
-
-The command ~infovore-show-browse-url~, bound to =b=, opens the current
-item's URL in the default web browser.
-
-The command ~infovore-show-next~, bound to =n=, advances point in the
-feed list window to the next line and displays that item in the detail
-view.  This allows you to read through items sequentially without
-switching back to the list buffer.
-
-The command ~infovore-show-prev~, bound to =p=, moves to the previous
-item in the feed list and displays it.
-
-The full keymap for ~infovore-show-mode~:
-
-| Key   | Command                        |
-|-------+--------------------------------|
-| =TAB= | ~infovore-show-toggle-view~   |
-| =t=   | ~infovore-show-toggle-view~    |
-| =b=   | ~infovore-show-browse-url~     |
-| =q=   | ~quit-window~                  |
-| =n=   | ~infovore-show-next~           |
-| =p=   | ~infovore-show-prev~           |
-
-** Mode line indicator
-:PROPERTIES:
-:CUSTOM_ID: h:mode-line-indicator
-:ID:       5C840939-D648-4385-B645-7380B57EBFE0
-:END:
-
-#+findex: infovore-mode-line-mode
-#+findex: infovore-modeline-update
-The global minor mode ~infovore-mode-line-mode~ adds an indicator to the
-mode line showing the count of unread curated items.  When enabled, the
-mode line displays =[IV:N]= where /N/ is the number of unread curated
-items.  When there are unread items, the indicator uses
-~infovore-modeline-active-face~ (bold, amber foreground); when the count
-is zero, it uses the default ~infovore-modeline-face~.
-
-Enable it in your init file:
-
-#+begin_src emacs-lisp
-(infovore-mode-line-mode 1)
-#+end_src
-
-The count is updated automatically after each fetch cycle.  You can also
-call ~infovore-modeline-update~ manually to refresh the count from the
-database at any time.
-
-* Functions
-:PROPERTIES:
-:CUSTOM_ID: h:functions
-:ID:       8D23AE8C-9368-42C2-8E37-B84DAF8742C9
-:END:
-
-** Database management
-:PROPERTIES:
-:CUSTOM_ID: h:database-management
-:ID:       2AFD2C56-4B97-4C9F-9ACD-150E531FA38D
-:END:
-
-#+findex: infovore-db-ensure
-#+findex: infovore-db-close
-The function ~infovore-db-ensure~ opens the database connection if it is
-not already open and creates the required tables and indexes if they do
-not exist.  It returns the active =emacsql= connection object.  This
-function is called automatically by most other database functions and by
-~infovore~ and ~infovore-start~, so you rarely need to call it directly.
-
-The function ~infovore-db-close~ closes the database connection if it is
-open.  You might call this if you need to move or replace the database
-file while Emacs is running.
-
-** Item storage and retrieval
-:PROPERTIES:
-:CUSTOM_ID: h:item-storage-and-retrieval
-:ID:       EDF3A68D-E2A1-412F-9565-258D736299BE
-:END:
-
-#+findex: infovore-db-insert-item
-#+findex: infovore-db-update-item
-#+findex: infovore-db-get-item
-#+findex: infovore-db-item-exists-p
-#+findex: infovore-db-query-items
-#+findex: infovore-db-uncurated-items
-#+findex: infovore-db-count-unread-curated
-The function ~infovore-db-insert-item~ inserts an ~infovore-item~ struct
-into the database.  It uses =INSERT OR IGNORE= semantics, so attempting
-to insert an item with a duplicate ID is silently skipped.  This is the
-mechanism behind infovore's URL-based deduplication.
-
-The function ~infovore-db-update-item~ updates specific fields of an
-existing item identified by its ID.  It accepts a plist of field-value
-pairs (e.g. ~:score 0.8 :summary "..."~).  Boolean fields (~:read-p~,
-~:starred-p~, ~:curated-p~) are automatically converted to integers for
-storage.
-
-The function ~infovore-db-get-item~ retrieves a single item by ID and
-returns it as an ~infovore-item~ struct, or ~nil~ if not found.
-
-The function ~infovore-db-item-exists-p~ returns non-nil if an item with
-the given ID exists in the database.  This is used during fetch cycles
-to skip already-known items without loading their full content.
-
-The function ~infovore-db-query-items~ is the general-purpose query
-function.  It accepts keyword arguments for filtering: ~:curated-only~,
-~:min-score~, ~:source-id~, ~:source-type~, ~:limit~, ~:offset~, and
-~:order-by~.  It returns a list of ~infovore-item~ structs.  The feed
-list view uses this function to populate its display
-([[#h:refreshing-and-filtering][Refreshing and filtering]]).
-
-The function ~infovore-db-uncurated-items~ returns items where
-~curated~ is false, ordered by fetch time (oldest first).  It accepts an
-optional ~limit~ argument.  The AI curation pipeline uses this function
-to find items that need scoring
-([[#h:ai-scoring-pipeline][AI scoring pipeline]]).
-
-The function ~infovore-db-count-unread-curated~ returns the count of
-items that are both curated and unread.  The mode line indicator uses
-this to display the unread count
-([[#h:mode-line-indicator][Mode line indicator]]).
-
-** Token budget tracking
-:PROPERTIES:
-:CUSTOM_ID: h:token-budget-tracking
-:ID:       78CC7BEE-5F01-4580-BC70-05CBB292469A
-:END:
-
-#+findex: infovore-db-get-budget-tokens
-#+findex: infovore-db-add-budget-tokens
-#+findex: infovore-ai-budget-exhausted-p
-The function ~infovore-db-get-budget-tokens~ returns the number of
-tokens used on a given date (specified as a ="YYYY-MM-DD"= string).  It
-returns ~0~ if no entry exists for that date.
-
-The function ~infovore-db-add-budget-tokens~ adds a token count to the
-budget for a given date.  It uses upsert semantics: if no row exists for
-the date, one is created; otherwise the amount is added to the existing
-total.
-
-The function ~infovore-ai-budget-exhausted-p~ returns non-nil when the
-daily token budget has been fully consumed.  The curation pipeline
-checks this before scoring each item and stops early when it returns
-non-nil ([[#h:ai-curation-settings][AI curation settings]]).
-
-** AI scoring pipeline
-:PROPERTIES:
-:CUSTOM_ID: h:ai-scoring-pipeline
-:ID:       2E4CD703-2BC7-4411-97F4-6563FB32A816
-:END:
-
-#+findex: infovore-ai-score-item
-#+findex: infovore-ai-curate-pending
-The function ~infovore-ai-score-item~ scores a single ~infovore-item~
-asynchronously using =gptel=.  It constructs a prompt from the user's
-interest profile and the item's content, sends it to the AI backend, and
-calls a callback with a cons cell ~(score . summary)~ on success, or
-~nil~ on failure.  Scoring is skipped (callback called with ~nil~) in
-three cases: the interest profile is empty, the daily token budget is
-exhausted, or the item has neither title nor content.  Content longer
-than 4000 characters is truncated before being sent.
-
-The function ~infovore-ai-curate-pending~ processes all uncurated items
-sequentially.  For each item, it calls ~infovore-ai-score-item~, and
-on success updates the item's score, summary, and curated status in the
-database.  Processing stops early if the token budget is exhausted.
-When all items have been processed (or the budget runs out), it calls a
-callback with the count of items successfully scored.  The main fetch
-cycle calls this function after inserting newly fetched items
-([[#h:manual-fetching][Manual fetching]]).
-
-** URL normalization and deduplication
-:PROPERTIES:
-:CUSTOM_ID: h:url-normalization
-:ID:       898794CD-CC30-4850-BA9F-49D93506FEAD
-:END:
-
-#+findex: infovore-normalize-url
-The function ~infovore-normalize-url~ normalizes a URL for
-deduplication purposes.  It lowercases the scheme and host, strips
-trailing slashes from the path, removes =utm_*= tracking query
-parameters, and preserves fragments.  The normalized URL serves as the
-item's unique ID in the database, ensuring that the same article reached
-via different tracking links is not stored twice.
-
-** Logging
-:PROPERTIES:
-:CUSTOM_ID: h:logging
-:ID:       53DD5867-C47A-4D92-99B1-0D16C6FE33EB
-:END:
-
-#+findex: infovore-log
-#+vindex: infovore-log-buffer-name
-The function ~infovore-log~ writes a timestamped, level-tagged message to
-the =*infovore-log*= buffer.  The level argument is one of ~info~,
-~warn~, or ~error~.  All significant events throughout infovore ---
-fetch attempts, parse results, AI scoring, budget exhaustion, errors ---
-are logged through this function.  The log buffer is useful for
-diagnosing fetch failures, understanding why items were skipped, and
-monitoring token usage.
-
-The variable ~infovore-log-buffer-name~ holds the name of the log
-buffer.  Its default value is ="*infovore-log*"=.
-
-** Fetch with retry
-:PROPERTIES:
-:CUSTOM_ID: h:fetch-with-retry
-:ID:       2D085051-7B89-49AD-AD2B-B34FEDFB2D73
-:END:
-
-#+findex: infovore-fetch-with-retry
-The function ~infovore-fetch-with-retry~ fetches a URL asynchronously
-with exponential backoff retry.  On success, it calls the callback with
-the response buffer.  On final failure (after all retries), it calls
-the callback with ~nil~.  The number of retries defaults to
-~infovore-max-retries~ ([[#h:error-handling-settings][Error handling settings]]).  All source plugins use
-this function for their HTTP requests, providing uniform retry behavior
-across the package.
-
-** Source protocol
-:PROPERTIES:
-:CUSTOM_ID: h:source-protocol
-:ID:       42BA454D-C58D-416E-A7E8-7F08A7E3EE45
-:END:
-
-#+findex: infovore-source-fetch
-#+findex: infovore-source-parse
-The generic function ~infovore-source-fetch~ is the entry point for
-fetching new items from a source.  It takes a source object and a
-callback, and calls the callback asynchronously with a list of
-~infovore-item~ structs (or ~nil~ on failure).  Each source type
-provides its own implementation of this method.
-
-The generic function ~infovore-source-parse~ converts raw fetched data
-(typically an XML parse tree or JSON alist) into a list of
-~infovore-item~ structs.  This is called internally by each source's
-~infovore-source-fetch~ implementation.
-
-* Ebib integration
-:PROPERTIES:
-:CUSTOM_ID: h:ebib-integration
-:ID:       C2089C11-D164-426A-9D34-DA2C37AE0A6F
-:END:
-
-#+findex: infovore-ebib-save
-#+findex: infovore-ebib-available-p
-The optional module =infovore-ebib.el= integrates infovore with =ebib=
-(the Emacs BibTeX database manager) and =zotra= (a citation metadata
-fetcher).  When both packages are installed, you can save an item's
-bibliographic metadata directly to your =ebib= database.
-
-The command ~infovore-ebib-save~, bound to =S= in both
-~infovore-list-mode~ and ~infovore-show-mode~, extracts the URL of the
-item at point, passes it to ~zotra-get-entry-from-url~ to retrieve a
-BibTeX entry, and imports the result into =ebib= via
-~ebib-import-entries~.  A confirmation message is displayed on success.
-
-If either =zotra= or =ebib= is not installed, the command signals a
-~user-error~ explaining which package is missing.  The function
-~infovore-ebib-available-p~ returns non-nil when both packages are
-loaded, which can be useful for conditionally binding keys or enabling
-menu entries.
-
-This module is loaded via ~(require 'infovore-ebib nil t)~ in the main
-entry point, so it is silently skipped when its dependencies are absent.
+- ~elfeed-ai-score-face~ --- default face for scores in the search
+  buffer.
+- ~elfeed-ai-score-high-face~ --- face for scores >= 0.7 (inherits
+  from ~success~).
+- ~elfeed-ai-score-low-face~ --- face for scores <= 0.3 (inherits from
+  ~shadow~).
+- ~elfeed-ai-summary-heading-face~ --- face for the "AI Summary"
+  heading in the show buffer.
 
 * Indices
 :PROPERTIES:
 :CUSTOM_ID: h:indices
-:ID:       279C4329-1B72-4458-BA33-EA11814AF864
 :END:
 
 ** Function index
 :PROPERTIES:
 :INDEX: fn
 :CUSTOM_ID: h:function-index
-:ID:       DD4BAEE3-75D2-4D17-B3D2-41F52DD08F2A
 :END:
 
 ** Variable index
 :PROPERTIES:
 :INDEX: vr
 :CUSTOM_ID: h:variable-index
-:ID:       1991CD47-4C70-46D7-9AAA-DD4690C6320E
 :END:
