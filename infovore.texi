@@ -106,7 +106,7 @@ and implementing two generic methods. @*
 
 @item
 @strong{Database layer} (@samp{infovore-db.el}) manages all persistence through @*
-@samp{emacsql} and @samp{emacsql-sqlite}.  It stores fetched items, tracks @*
+@samp{emacsql}.  It stores fetched items, tracks @*
 read/starred/curated state, and maintains a daily token budget ledger. @*
 
 @item
@@ -138,7 +138,7 @@ database via @samp{zotra}. @*
 @end itemize
 
 The core dependencies are @samp{gptel} (AI backend), @samp{elfeed} (XML parsing @*
-only), @samp{emacsql} and @samp{emacsql-sqlite} (database), and Emacs 29.1 or @*
+only), @samp{emacsql} (database), and Emacs 29.1 or @*
 later (for native @samp{libxml} support and @samp{shr}). @*
 
 @node User options

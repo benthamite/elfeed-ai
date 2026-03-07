@@ -4,7 +4,7 @@
 
 ;; Author: Pablo Stafforini
 ;; Keywords: comm, data
-;; Package-Requires: ((emacs "27.1") (emacsql "4.0.0") (emacsql-sqlite "4.0.0"))
+;; Package-Requires: ((emacs "27.1") (emacsql "4.0.0"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -24,7 +24,7 @@
 ;;; Commentary:
 
 ;; Database access layer for infovore.  All item storage, retrieval, and
-;; querying goes through this module.  Uses emacsql and emacsql-sqlite to
+;; querying goes through this module.  Uses emacsql to
 ;; manage a single SQLite database that holds fetched items and daily
 ;; token-budget accounting.
 

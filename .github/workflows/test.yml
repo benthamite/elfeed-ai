@@ -27,18 +27,15 @@ jobs:
             (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)
             (package-initialize)
             (package-refresh-contents)
-            (package-install 'emacsql)
-            (package-install 'emacsql-sqlite))"
+            (package-install 'emacsql))"
 
       - name: Run tests
         run: |
           EMACSQL_DIR=$(find ~/.emacs.d/elpa -maxdepth 1 -name "emacsql-[0-9]*" -type d | head -1)
-          EMACSQL_SQLITE_DIR=$(find ~/.emacs.d/elpa -maxdepth 1 -name "emacsql-sqlite-*" -type d | head -1)
           COMPAT_DIR=$(find ~/.emacs.d/elpa -maxdepth 1 -name "compat-*" -type d | head -1)
 
           LOAD_ARGS="-L . -L test"
           [ -d "$EMACSQL_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $EMACSQL_DIR"
-          [ -d "$EMACSQL_SQLITE_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $EMACSQL_SQLITE_DIR"
           [ -d "$COMPAT_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $COMPAT_DIR"
 
           FAILED=0

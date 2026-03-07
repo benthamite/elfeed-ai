@@ -42,7 +42,7 @@ Infovore is organized around several cooperating modules:
   and implementing two generic methods.
 
 - *Database layer* (=infovore-db.el=) manages all persistence through
-  =emacsql= and =emacsql-sqlite=.  It stores fetched items, tracks
+  =emacsql=.  It stores fetched items, tracks
   read/starred/curated state, and maintains a daily token budget ledger.
 
 - *AI curation* (=infovore-ai.el=) handles the scoring pipeline.  For
@@ -68,7 +68,7 @@ Infovore is organized around several cooperating modules:
   database via =zotra=.
 
 The core dependencies are =gptel= (AI backend), =elfeed= (XML parsing
-only), =emacsql= and =emacsql-sqlite= (database), and Emacs 29.1 or
+only), =emacsql= (database), and Emacs 29.1 or
 later (for native =libxml= support and =shr=).
 
 * User options
