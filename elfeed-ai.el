@@ -76,7 +76,7 @@ every AI scoring prompt.  When empty, scoring is skipped."
   :type 'float
   :group 'elfeed-ai)
 
-(defcustom elfeed-ai-daily-budget '(tokens . 100000)
+(defcustom elfeed-ai-daily-budget '(dollars . 1.00)
   "Daily budget for AI scoring, as a (TYPE . LIMIT) cons cell.
 TYPE is `tokens' or `dollars'.
 
