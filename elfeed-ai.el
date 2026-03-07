@@ -109,7 +109,7 @@ Longer content is truncated."
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-backend nil
-  "gptel backend name for AI scoring, e.g. \"Gemini\" or \"Claude\".
+  "The gptel backend name for AI scoring, e.g. \"Gemini\" or \"Claude\".
 When nil, the backend is inferred from `elfeed-ai-model', falling
 back to `gptel-backend'."
   :type '(choice (const :tag "Infer from model or use gptel default" nil)
@@ -117,7 +117,7 @@ back to `gptel-backend'."
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-model nil
-  "gptel model for AI scoring, e.g. `claude-sonnet-4-5-20250514'.
+  "The gptel model for AI scoring, e.g. `claude-sonnet-4-5-20250514'.
 When nil, defaults to `gptel-model'."
   :type '(choice (const :tag "Use gptel default" nil)
                  (symbol :tag "Model name"))
@@ -143,7 +143,7 @@ Scores at or below this value use `elfeed-ai-score-low-face'."
 ;;;; Option resolution
 
 (defun elfeed-ai--find-backend-for-model (model)
-  "Return the gptel backend that offers MODEL, or nil."
+  "Return the gptel backend that provides MODEL, or nil."
   (cl-loop for (_name . backend) in gptel--known-backends
            when (member model (gptel-backend-models backend))
            return backend))
