@@ -2,6 +2,8 @@
 
 `elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader. Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, scoring them for relevance and optionally showing you a quick AI-generated summary before you read the full article.
 
+![elfeed-ai search buffer sorted by relevance score](screenshot.png)
+
 Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Scores are stored as entry metadata, so you can sort by relevance. Optionally, set `elfeed-ai-relevance-threshold` to tag entries above a cutoff (e.g., `+elfeed-ai +unread`).
 
 Key capabilities:
