@@ -1,6 +1,6 @@
 # `elfeed-ai`: AI-powered content curation for elfeed
 
-`elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader. Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, scoring them for relevance and optionally showing you a quick AI-generated summary before you read the full article.
+`elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader, via [gptel](https://github.com/karthink/gptel). Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, scoring them for relevance and optionally showing you a quick AI-generated summary before you read the full article.
 
 ![elfeed-ai search buffer sorted by relevance score](screenshot.png)
 
