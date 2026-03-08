@@ -27,6 +27,10 @@ jobs:
             (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)
             (package-initialize)
             (package-refresh-contents)
+            ;; cond-let is built into Emacs 30+; older versions need the
+            ;; GNU ELPA shim so that the latest transient can load.
+            (unless (locate-library \"cond-let\")
+              (package-install 'cond-let))
             (package-install 'elfeed)
             (package-install 'gptel))"
 
@@ -37,6 +41,7 @@ jobs:
           COMPAT_DIR=$(find ~/.emacs.d/elpa -maxdepth 1 -name "compat-*" -type d | head -1)
           TRANSIENT_DIR=$(find ~/.emacs.d/elpa -maxdepth 1 -name "transient-*" -type d | head -1)
           MAP_DIR=$(find ~/.emacs.d/elpa -maxdepth 1 -name "map-*" -type d | head -1)
+          CONDLET_DIR=$(find ~/.emacs.d/elpa -maxdepth 1 -name "cond-let-*" -type d | head -1)
 
           LOAD_ARGS="-L . -L test"
           [ -d "$ELFEED_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $ELFEED_DIR"
@@ -44,6 +49,7 @@ jobs:
           [ -d "$COMPAT_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $COMPAT_DIR"
           [ -d "$TRANSIENT_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $TRANSIENT_DIR"
           [ -d "$MAP_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $MAP_DIR"
+          [ -d "$CONDLET_DIR" ] && LOAD_ARGS="$LOAD_ARGS -L $CONDLET_DIR"
 
           for f in test/*-test.el; do
             echo "=== Running $(basename $f) ==="
