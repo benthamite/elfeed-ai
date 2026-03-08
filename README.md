@@ -2,7 +2,7 @@
 
 `elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader. Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, tagging the ones that matter and, optionally, showing you a quick AI-generated summary before you read the full article.
 
-Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Entries scoring above a configurable threshold are tagged `ai-relevant` (or any tag you choose), so you can filter your elfeed search to `+ai-relevant +unread` and see only curated content.
+Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Entries scoring above a configurable threshold are tagged `elfeed-ai` (or any tag you choose), so you can filter your elfeed search to `+elfeed-ai +unread` and see only curated content.
 
 Key capabilities:
 
@@ -47,7 +47,7 @@ Requires Emacs 29.1 or later, plus [elfeed](https://github.com/skeeto/elfeed) (3
 (elfeed-ai-mode 1)
 ```
 
-Run `M-x elfeed-update` as usual. New entries are scored automatically, and those meeting the relevance threshold are tagged `ai-relevant`. Filter your search buffer with `+ai-relevant +unread` to see curated content.
+Run `M-x elfeed-update` as usual. New entries are scored automatically, and those meeting the relevance threshold are tagged `elfeed-ai`. Filter your search buffer with `+elfeed-ai +unread` to see curated content.
 
 To score entries that arrived before you enabled the mode, use `M-x elfeed-ai-score-unscored`. `elfeed-ai` will then score all and only the entries published in a number of past days equal to `elfeed-ai-score-unscored-days` (set to `7` by default).
 

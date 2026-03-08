@@ -40,8 +40,8 @@
 ;;   (elfeed-ai-mode 1)
 ;;
 ;; New entries are automatically scored when fetched.  Entries scoring
-;; above `elfeed-ai-relevance-threshold' are tagged `ai-relevant'.
-;; Use "+ai-relevant" in your elfeed search filter to see curated content.
+;; above `elfeed-ai-relevance-threshold' are tagged `elfeed-ai'.
+;; Use "+elfeed-ai" in your elfeed search filter to see curated content.
 
 ;;; Code:
 
@@ -109,7 +109,7 @@ Longer content is truncated."
   :type 'integer
   :group 'elfeed-ai)
 
-(defcustom elfeed-ai-score-tag 'ai-relevant
+(defcustom elfeed-ai-score-tag 'elfeed-ai
   "Tag added to entries scoring above `elfeed-ai-relevance-threshold'."
   :type 'symbol
   :group 'elfeed-ai)
@@ -746,7 +746,7 @@ Idempotent: removes any existing summary before inserting."
 When enabled, new elfeed entries are automatically scored for
 relevance against `elfeed-ai-interest-profile'.  Entries scoring
 above `elfeed-ai-relevance-threshold' are tagged with
-`elfeed-ai-score-tag' (default `ai-relevant').
+`elfeed-ai-score-tag' (default `elfeed-ai').
 
 The search buffer displays an AI score column, and the show
 buffer displays AI-generated summaries above the original content."

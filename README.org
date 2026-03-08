@@ -27,7 +27,7 @@ you.
 The package uses [[https://github.com/karthink/gptel][gptel]] to send each entry's title and content to a
 language model, which returns a relevance score between 0.0 and 1.0
 and, optionally, a brief summary.  Entries scoring above a
-configurable threshold are tagged (by default with ~ai-relevant~),
+configurable threshold are tagged (by default with ~elfeed-ai~),
 which you can use in elfeed's standard search filter syntax to view
 only curated content.
 
@@ -75,11 +75,11 @@ Emacs 29.1 or later.
 #+end_src
 
 New entries are scored automatically when elfeed fetches them.  Use
-=+ai-relevant= in your elfeed search filter to see only curated
+=+elfeed-ai= in your elfeed search filter to see only curated
 content:
 
 #+begin_example
-+ai-relevant +unread
++elfeed-ai +unread
 #+end_example
 
 You can also point ~elfeed-ai-interest-profile~ at a file containing a
@@ -216,7 +216,7 @@ persist daily usage data across Emacs sessions.  The default is
 #+vindex: elfeed-ai-scored-tag
 The user option ~elfeed-ai-score-tag~ is the tag added to entries whose
 AI score meets or exceeds ~elfeed-ai-relevance-threshold~
-([[#h:scoring-behavior][Scoring behavior]]).  The default is ~ai-relevant~.  You can change
+([[#h:scoring-behavior][Scoring behavior]]).  The default is ~elfeed-ai~.  You can change
 this to any symbol, then use it in elfeed search filters (e.g.,
 =+my-custom-tag +unread=).
 
