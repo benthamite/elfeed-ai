@@ -63,4 +63,4 @@ For a comprehensive description of all user options, commands, and functions, se
 
 **Q: How expensive is this?**
 
-A: The cost depends on how many feeds you have and what model you use. With `'gemini-flash-lite-latest` (as of early March 2026), the cost per 100 entries was less than $0.10. You can see historical costs in the ‘Budget’ section of `elfeed-ai-menu`, and set daily limits with `elfeed-ai-daily-budget` (defaults to $1).
+A: The cost depends on how many feeds you have and what model you use. With `gemini-flash-lite-latest` (as of early March 2026), the cost per 100 entries was less than $0.10. You can see historical costs in the ‘Budget’ section of `elfeed-ai-menu`, and set daily limits with `elfeed-ai-daily-budget` (defaults to $1).
