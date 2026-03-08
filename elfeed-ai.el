@@ -571,11 +571,24 @@ CALLBACK is called with (score . summary) on success, or nil."
          (run-at-time 0 nil #'elfeed-ai--process-queue))))))
 
 (defun elfeed-ai--refresh-search ()
-  "Refresh the elfeed search buffer if it exists."
+  "Refresh the elfeed search buffer preserving scroll position.
+`elfeed-search-update--force' follows the entry at point, which is
+disorienting when the sort order changes.  Override by restoring
+the original line and window start instead."
   (when-let ((buf (get-buffer "*elfeed-search*")))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (elfeed-search-update--force)))))
+        (let ((win (get-buffer-window buf))
+              (wstart (and (get-buffer-window buf)
+                           (window-start (get-buffer-window buf))))
+              (line (line-number-at-pos))
+              (col (current-column)))
+          (elfeed-search-update--force)
+          (goto-char (point-min))
+          (forward-line (1- line))
+          (move-to-column col)
+          (when (and win wstart)
+            (set-window-start win wstart t)))))))
 
 ;;;; Display — search buffer
 
