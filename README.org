@@ -59,7 +59,7 @@ of all settings ([[#h:transient-menu][Transient menu]]).
 Dependencies: =elfeed= (3.4.1+), =gptel= (0.9+), =transient= (0.7+),
 Emacs 29.1 or later.
 
-* Quick start
+** Quick start
 :PROPERTIES:
 :CUSTOM_ID: h:quick-start
 :END:
@@ -122,6 +122,7 @@ The type is ~(choice string file)~.
 
 #+vindex: elfeed-ai-auto-score
 #+vindex: elfeed-ai-generate-summary
+#+vindex: elfeed-ai-summary-prompt
 #+vindex: elfeed-ai-relevance-threshold
 #+vindex: elfeed-ai-score-unscored-days
 #+vindex: elfeed-ai-max-content-length
@@ -137,6 +138,17 @@ is ~t~.  Summaries are displayed in the show buffer above the original
 content.  Setting this to ~nil~ reduces token usage per entry, which
 is useful if you are on a tight budget ([[#h:budget][Budget]]) or only care about
 the score.
+
+The user option ~elfeed-ai-summary-prompt~ is the instruction appended
+to the scoring prompt that describes what the summary should contain.
+It is only used when ~elfeed-ai-generate-summary~ is non-nil.  The
+text is inserted after the request for a ~"summary"~ JSON key, so it
+should describe the desired content and length of the summary rather
+than repeating structural instructions.  The default value is
+~"a 1-3 sentence summary of the content"~.  You might change this to,
+for example, ~"a one-paragraph explanation of why this is relevant to
+the user's interests"~ to get more targeted summaries.  The type is
+~string~.
 
 The user option ~elfeed-ai-relevance-threshold~ sets the minimum AI
 score (a float between 0.0 and 1.0) for an entry to receive the
@@ -284,6 +296,9 @@ The command ~elfeed-ai-mode~ is a global minor mode that activates all
 - Adds ~elfeed-ai--enqueue~ to ~elfeed-new-entry-hook~ if
   ~elfeed-ai-auto-score~ is non-nil ([[#h:scoring-behavior][Scoring behavior]]).
 - Advises ~elfeed-show-refresh~ to inject AI summaries.
+- If =elfeed-tube= is available, advises ~elfeed-tube-show~ to
+  re-inject the AI summary after elfeed-tube modifies the show buffer
+  ([[#h:elfeed-tube-integration][elfeed-tube integration]]).
 
 When disabled, all integrations are cleanly removed and the original
 print and sort functions are restored.  The pending scoring queue is
@@ -356,36 +371,6 @@ modified it is restored.
 
 The search buffer is refreshed immediately after toggling.  This
 command is also available in the transient menu ([[#h:transient-menu][Transient menu]]).
-
-** Transient menu
-:PROPERTIES:
-:CUSTOM_ID: h:transient-menu
-:END:
-
-#+findex: elfeed-ai-menu
-The command ~elfeed-ai-menu~ opens a [[https://github.com/magit/transient][transient]] menu providing
-centralized access to all =elfeed-ai= commands and settings.  The menu
-is organized into four groups:
-
-- *Score*: commands for scoring the current entry or selection
-  (~elfeed-ai-score~) and for scoring unscored entries
-  (~elfeed-ai-score-unscored~).
-
-- *Display*: toggles for sort order (~elfeed-ai-toggle-sort~) and the
-  minor mode (~elfeed-ai-mode~).
-
-- *Scoring*: interactive adjustment of the AI model, auto-scoring,
-  summary generation, relevance threshold, max content length, and the
-  number of days for ~elfeed-ai-score-unscored~.
-
-- *Budget*: toggle between token and dollar budget types, and set the
-  budget limit.  In dollar mode, the group heading displays the total
-  cost of the last 100 scored entries, helping you calibrate the
-  daily limit.
-
-Changes made through the transient menu take effect immediately but
-are not persisted across sessions.  To make them permanent, set the
-corresponding user options in your init file.
 
 * Functions
 :PROPERTIES:
@@ -494,6 +479,65 @@ You can customize these faces with =M-x customize-face= or by setting
 them in your init file.  The score thresholds that determine which
 face is used are controlled by ~elfeed-ai-score-high-threshold~ and
 ~elfeed-ai-score-low-threshold~ ([[#h:display][Display]]).
+
+* Transient menu
+:PROPERTIES:
+:CUSTOM_ID: h:transient-menu
+:END:
+
+#+findex: elfeed-ai-menu
+The command ~elfeed-ai-menu~ opens a [[https://github.com/magit/transient][transient]] menu providing
+centralized access to all =elfeed-ai= commands and settings.  The menu
+is organized into four groups:
+
+- *Score*: commands for scoring the current entry or selection
+  (~elfeed-ai-score~, bound to =s=) and for scoring unscored entries
+  (~elfeed-ai-score-unscored~, bound to =S=).
+
+- *Display*: toggles for sort order (~elfeed-ai-toggle-sort~, bound to
+  =t=) and the minor mode (~elfeed-ai-mode~, bound to =m=).
+
+- *Scoring*: interactive adjustment of the AI model (=-m=),
+  auto-scoring (=-a=), summary generation (=-s=), relevance threshold
+  (=-r=), max content length (=-l=), and the number of days for
+  ~elfeed-ai-score-unscored~ (=-d=).
+
+- *Budget*: toggle between token and dollar budget types (=-t=), and
+  set the budget limit (=-b=).  In dollar mode, the group heading
+  displays the total cost of the last 100 scored entries, helping you
+  calibrate the daily limit.
+
+Changes made through the transient menu take effect immediately but
+are not persisted across sessions.  To make them permanent, set the
+corresponding user options in your init file.
+
+You might bind the menu to a convenient key in elfeed:
+
+#+begin_src emacs-lisp
+(define-key elfeed-search-mode-map (kbd "Y") #'elfeed-ai-menu)
+(define-key elfeed-show-mode-map (kbd "Y") #'elfeed-ai-menu)
+#+end_src
+
+* elfeed-tube integration
+:PROPERTIES:
+:CUSTOM_ID: h:elfeed-tube-integration
+:END:
+
+If you use [[https://github.com/karthink/elfeed-tube][elfeed-tube]] alongside =elfeed-ai=, the two packages
+interact in the show buffer.  The issue is that ~elfeed-tube-show~
+replaces or modifies the show buffer content after
+~elfeed-show-refresh~ has already run, which would normally remove the
+injected AI summary.
+
+=elfeed-ai= handles this automatically.  When ~elfeed-ai-mode~ is
+enabled, it advises ~elfeed-tube-show~ so that the AI summary is
+re-injected after elfeed-tube finishes its modifications.  This advice
+is installed eagerly if =elfeed-tube= is already loaded, or deferred
+via ~with-eval-after-load~ if it has not yet been loaded.
+
+No configuration is required on your part: if both packages are
+installed and their respective modes are active, the integration works
+transparently.
 
 * Indices
 :PROPERTIES:
