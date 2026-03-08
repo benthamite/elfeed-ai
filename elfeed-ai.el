@@ -145,6 +145,13 @@ command prompts for a custom number of days."
   :type 'integer
   :group 'elfeed-ai)
 
+(defcustom elfeed-ai-sort-by-score t
+  "When non-nil, sort the search buffer by AI score (highest first).
+Unscored entries are sorted after scored ones.  Entries with equal
+scores are sorted by date."
+  :type 'boolean
+  :group 'elfeed-ai)
+
 (defcustom elfeed-ai-score-high-threshold 0.7
   "Minimum score for the high-score face in the search buffer.
 Scores at or above this value use `elfeed-ai-score-high-face'."
@@ -237,6 +244,9 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
 
 (defvar elfeed-ai--original-print-entry-function nil
   "Original value of `elfeed-search-print-entry-function'.")
+
+(defvar elfeed-ai--original-sort-function nil
+  "Original value of `elfeed-search-sort-function'.")
 
 ;;;; Budget tracking
 
@@ -576,6 +586,18 @@ CALLBACK is called with (score . summary) on success, or nil."
     (when tags
       (insert "(" tags-str ")"))))
 
+;;;; Sorting
+
+(defun elfeed-ai-sort (a b)
+  "Sort predicate for elfeed entries: highest AI score first.
+Unscored entries sort after scored ones.  Entries with equal
+scores are sorted by date (newest first)."
+  (let ((score-a (or (elfeed-meta a :ai-score) -1.0))
+        (score-b (or (elfeed-meta b :ai-score) -1.0)))
+    (if (/= score-a score-b)
+        (> score-a score-b)
+      (> (elfeed-entry-date a) (elfeed-entry-date b)))))
+
 ;;;; Display — show buffer
 
 (defun elfeed-ai--show-inject-summary (&rest _)
@@ -626,6 +648,9 @@ buffer displays AI-generated summaries above the original content."
           elfeed-search-print-entry-function))
   (setq elfeed-search-print-entry-function
         #'elfeed-ai-search-print-entry)
+  (when elfeed-ai-sort-by-score
+    (setq elfeed-ai--original-sort-function elfeed-search-sort-function)
+    (setq elfeed-search-sort-function #'elfeed-ai-sort))
   (when elfeed-ai-auto-score
     (add-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue))
   (advice-add 'elfeed-show-refresh :after #'elfeed-ai--show-inject-summary))
@@ -636,6 +661,9 @@ buffer displays AI-generated summaries above the original content."
     (setq elfeed-search-print-entry-function
           elfeed-ai--original-print-entry-function)
     (setq elfeed-ai--original-print-entry-function nil))
+  (when elfeed-ai-sort-by-score
+    (setq elfeed-search-sort-function elfeed-ai--original-sort-function)
+    (setq elfeed-ai--original-sort-function nil))
   (remove-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue)
   (advice-remove 'elfeed-show-refresh #'elfeed-ai--show-inject-summary))
 
