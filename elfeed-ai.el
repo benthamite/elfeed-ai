@@ -869,15 +869,15 @@ argument, prompt for the number of days."
     ("t" "Toggle sort by score" elfeed-ai-toggle-sort)
     ("m" "Toggle mode" elfeed-ai-mode)]
    ["Scoring"
-    ("om" elfeed-ai--set-model)
-    ("oa" elfeed-ai--set-auto-score)
-    ("os" elfeed-ai--set-generate-summary)
-    ("or" elfeed-ai--set-relevance-threshold)
-    ("ol" elfeed-ai--set-max-content-length)
-    ("od" elfeed-ai--set-score-unscored-days)]
+    ("-m" elfeed-ai--set-model)
+    ("-a" elfeed-ai--set-auto-score)
+    ("-s" elfeed-ai--set-generate-summary)
+    ("-r" elfeed-ai--set-relevance-threshold)
+    ("-l" elfeed-ai--set-max-content-length)
+    ("-d" elfeed-ai--set-score-unscored-days)]
    ["Budget"
-    ("bt" elfeed-ai--set-budget-type)
-    ("bl" elfeed-ai--set-budget-limit)]])
+    ("-t" elfeed-ai--set-budget-type)
+    ("-b" elfeed-ai--set-budget-limit)]])
 
 (provide 'elfeed-ai)
 ;;; elfeed-ai.el ends here
