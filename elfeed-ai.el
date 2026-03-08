@@ -204,12 +204,12 @@ contents; otherwise return the value itself."
 ;;;; Faces
 
 (defface elfeed-ai-score-face
-  '((t :inherit elfeed-search-date-face))
-  "Default face for AI scores in the search buffer."
+  '((t :inherit shadow))
+  "Default face for mid-range AI scores in the search buffer."
   :group 'elfeed-ai)
 
 (defface elfeed-ai-score-high-face
-  '((t :inherit success))
+  '((t :inherit success :weight bold))
   "Face for high AI scores in the search buffer.
 Applied when the score is at or above `elfeed-ai-score-high-threshold'."
   :group 'elfeed-ai)
