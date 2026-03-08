@@ -145,6 +145,13 @@ command prompts for a custom number of days."
   :type 'integer
   :group 'elfeed-ai)
 
+(defcustom elfeed-ai-generate-summary t
+  "When non-nil, request a summary alongside the score.
+The summary is shown in the elfeed show buffer.  Disabling this
+reduces token usage per entry."
+  :type 'boolean
+  :group 'elfeed-ai)
+
 (defcustom elfeed-ai-sort-by-score t
   "When non-nil, sort the search buffer by AI score (highest first).
 Unscored entries are sorted after scored ones.  Entries with equal
@@ -378,14 +385,22 @@ content item, evaluate how relevant the item is to the user's interests.
 Rate the relevance of this content item on a scale from 0.0 to 1.0, \
 where 0.0 means completely irrelevant and 1.0 means extremely relevant.
 
-Respond with ONLY a JSON object (no markdown fences, no extra text) with \
-exactly two keys:
-- \"score\": a float between 0.0 and 1.0
-- \"summary\": a 1-3 sentence summary of the content
+Respond with ONLY a JSON object (no markdown fences, no extra text)%s
 
 Example response:
-{\"score\": 0.75, \"summary\": \"The article discusses recent advances in ...\"}"
-   (elfeed-ai--resolve-profile)))
+%s"
+   (elfeed-ai--resolve-profile)
+   (if elfeed-ai-generate-summary
+       " with \
+exactly two keys:
+- \"score\": a float between 0.0 and 1.0
+- \"summary\": a 1-3 sentence summary of the content"
+     " with \
+exactly one key:
+- \"score\": a float between 0.0 and 1.0")
+   (if elfeed-ai-generate-summary
+       "{\"score\": 0.75, \"summary\": \"The article discusses recent advances in ...\"}"
+     "{\"score\": 0.75}")))
 
 (defun elfeed-ai--build-prompt (entry)
   "Build the user prompt for scoring elfeed ENTRY."
@@ -418,8 +433,9 @@ Example response:
                  (summary (cdr (assoc "summary" parsed))))
             (if (and score (numberp score)
                      (<= 0.0 score) (<= score 1.0)
-                     summary (stringp summary))
-                (cons score summary)
+                     (or (not elfeed-ai-generate-summary)
+                         (and summary (stringp summary))))
+                (cons score (or summary ""))
               (elfeed-log 'warn "elfeed-ai: invalid response structure: %S" parsed)
               nil))
         (error
@@ -620,7 +636,8 @@ restored."
 (defun elfeed-ai--show-inject-summary (&rest _)
   "Inject AI summary at the top of the elfeed show buffer."
   (when-let* ((entry elfeed-show-entry)
-              (summary (elfeed-meta entry :ai-summary)))
+              (summary (elfeed-meta entry :ai-summary))
+              (_non-empty (not (string-empty-p summary))))
     (let ((inhibit-read-only t)
           (score (elfeed-meta entry :ai-score))
           (cost (elfeed-meta entry :ai-cost)))
