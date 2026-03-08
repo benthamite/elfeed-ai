@@ -598,6 +598,23 @@ scores are sorted by date (newest first)."
         (> score-a score-b)
       (> (elfeed-entry-date a) (elfeed-entry-date b)))))
 
+;;;###autoload
+(defun elfeed-ai-toggle-sort ()
+  "Toggle sorting by AI score in the elfeed search buffer.
+When sorting is enabled, `elfeed-search-sort-function' is set to
+`elfeed-ai-sort'; when disabled, the original sort function is
+restored."
+  (interactive)
+  (if (eq elfeed-search-sort-function #'elfeed-ai-sort)
+      (progn
+        (setq elfeed-search-sort-function elfeed-ai--original-sort-function)
+        (message "elfeed-ai: sorting by date"))
+    (unless elfeed-ai--original-sort-function
+      (setq elfeed-ai--original-sort-function elfeed-search-sort-function))
+    (setq elfeed-search-sort-function #'elfeed-ai-sort)
+    (message "elfeed-ai: sorting by score"))
+  (elfeed-ai--refresh-search))
+
 ;;;; Display — show buffer
 
 (defun elfeed-ai--show-inject-summary (&rest _)
