@@ -684,6 +684,24 @@ restored."
                               start 'elfeed-ai-summary)
                              (point-max))))))))
 
+(defun elfeed-ai--after-elfeed-tube-show (&optional intended-entry)
+  "Re-inject AI summary after elfeed-tube modifies the show buffer.
+`elfeed-tube-show' uses `with-current-buffer' internally, so when
+it returns the current buffer is not the show buffer.  Find the
+correct buffer and inject there."
+  (when elfeed-ai-mode
+    (if (derived-mode-p 'elfeed-show-mode)
+        (elfeed-ai--show-inject-summary)
+      (when intended-entry
+        (dolist (buf (buffer-list))
+          (when (and (buffer-live-p buf)
+                     (eq (buffer-local-value 'major-mode buf)
+                         'elfeed-show-mode)
+                     (eq (buffer-local-value 'elfeed-show-entry buf)
+                         intended-entry))
+            (with-current-buffer buf
+              (elfeed-ai--show-inject-summary))))))))
+
 (defun elfeed-ai--show-inject-summary (&rest _)
   "Inject AI summary at the top of the elfeed show buffer.
 Idempotent: removes any existing summary before inserting."
@@ -749,11 +767,13 @@ buffer displays AI-generated summaries above the original content."
                 "elfeed-ai: dollar budget requires gptel-plus; budget will not be enforced"))
   (advice-add 'elfeed-show-refresh :after #'elfeed-ai--show-inject-summary)
   ;; Re-inject after elfeed-tube modifies the show buffer directly.
+  ;; elfeed-tube-show uses with-current-buffer internally, so we need
+  ;; a dedicated wrapper that finds the correct show buffer.
   (if (fboundp 'elfeed-tube-show)
-      (advice-add 'elfeed-tube-show :after #'elfeed-ai--show-inject-summary)
+      (advice-add 'elfeed-tube-show :after #'elfeed-ai--after-elfeed-tube-show)
     (with-eval-after-load 'elfeed-tube
       (when elfeed-ai-mode
-        (advice-add 'elfeed-tube-show :after #'elfeed-ai--show-inject-summary))))
+        (advice-add 'elfeed-tube-show :after #'elfeed-ai--after-elfeed-tube-show))))
   (elfeed-ai--refresh-search))
 
 (defun elfeed-ai--disable ()
@@ -770,7 +790,7 @@ buffer displays AI-generated summaries above the original content."
   (remove-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue)
   (advice-remove 'elfeed-show-refresh #'elfeed-ai--show-inject-summary)
   (when (fboundp 'elfeed-tube-show)
-    (advice-remove 'elfeed-tube-show #'elfeed-ai--show-inject-summary))
+    (advice-remove 'elfeed-tube-show #'elfeed-ai--after-elfeed-tube-show))
   (elfeed-ai--refresh-search))
 
 ;;;; Interactive commands
