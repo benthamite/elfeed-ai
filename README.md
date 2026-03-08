@@ -1,6 +1,6 @@
 # `elfeed-ai`: AI-powered content curation for elfeed
 
-`elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader. Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, tagging the ones that matter and showing you a quick AI-generated summary before you read the full article.
+`elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader. Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, tagging the ones that matter and, optionally, showing you a quick AI-generated summary before you read the full article.
 
 Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Entries scoring above a configurable threshold are tagged `ai-relevant` (or any tag you choose), so you can filter your elfeed search to `+ai-relevant +unread` and see only curated content.
 
