@@ -884,9 +884,10 @@ Returns nil if no entries have cost data."
       (format "Last 100 entries: $%.4f" cost)
     "Last 100 entries: n/a"))
 
-(transient-define-suffix elfeed-ai--show-last-100-cost ()
-  :key "" :description #'elfeed-ai--format-last-100-cost
-  (interactive))
+(defun elfeed-ai--budget-heading ()
+  "Return the Budget group heading with last-100 cost info."
+  (let ((cost-str (elfeed-ai--format-last-100-cost)))
+    (format "Budget  (%s)" cost-str)))
 
 ;;;###autoload
 (transient-define-prefix elfeed-ai-menu ()
@@ -904,10 +905,9 @@ Returns nil if no entries have cost data."
     ("-r" elfeed-ai--set-relevance-threshold)
     ("-l" elfeed-ai--set-max-content-length)
     ("-d" elfeed-ai--set-score-unscored-days)]
-   ["Budget"
+   [:description elfeed-ai--budget-heading
     ("-t" elfeed-ai--set-budget-type)
-    ("-b" elfeed-ai--set-budget-limit)
-    (elfeed-ai--show-last-100-cost)]])
+    ("-b" elfeed-ai--set-budget-limit)]])
 
 (provide 'elfeed-ai)
 ;;; elfeed-ai.el ends here
