@@ -872,8 +872,8 @@ argument, prompt for the number of days."
     ("s" "Score entry/selection" elfeed-ai-score)
     ("S" "Score unscored entries" elfeed-ai-score-unscored)]
    ["Display"
-    ("t" "Toggle sort by score" elfeed-ai-toggle-sort)
-    ("m" "Toggle mode" elfeed-ai-mode)]
+    ("t" "Toggle sort by score" elfeed-ai-toggle-sort :transient t)
+    ("m" "Toggle mode" elfeed-ai-mode :transient t)]
    ["Scoring"
     ("-m" elfeed-ai--set-model)
     ("-a" elfeed-ai--set-auto-score)
