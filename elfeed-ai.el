@@ -835,8 +835,14 @@ argument, prompt for the number of days."
                             (symbol-name elfeed-ai-model)))))
               (if (string-empty-p input) nil (intern input)))))
 
+(defclass elfeed-ai--budget-type-variable (transient-lisp-variable) ()
+  "Transient variable that displays only the budget type.")
+
+(cl-defmethod transient-format-value ((_obj elfeed-ai--budget-type-variable))
+  (propertize (symbol-name (elfeed-ai--budget-type)) 'face 'transient-value))
+
 (transient-define-infix elfeed-ai--set-budget-type ()
-  :class 'transient-lisp-variable
+  :class 'elfeed-ai--budget-type-variable
   :variable 'elfeed-ai-daily-budget
   :description "Budget type"
   :reader (lambda (&rest _)
@@ -844,8 +850,17 @@ argument, prompt for the number of days."
                                 'dollars 'tokens)))
               (cons new-type (elfeed-ai--budget-limit)))))
 
+(defclass elfeed-ai--budget-limit-variable (transient-lisp-variable) ()
+  "Transient variable that displays only the budget limit.")
+
+(cl-defmethod transient-format-value ((_obj elfeed-ai--budget-limit-variable))
+  (propertize (pcase (elfeed-ai--budget-type)
+                ('tokens (format "%d" (elfeed-ai--budget-limit)))
+                ('dollars (format "$%.2f" (elfeed-ai--budget-limit))))
+              'face 'transient-value))
+
 (transient-define-infix elfeed-ai--set-budget-limit ()
-  :class 'transient-lisp-variable
+  :class 'elfeed-ai--budget-limit-variable
   :variable 'elfeed-ai-daily-budget
   :description
   (lambda ()
