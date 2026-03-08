@@ -1,5 +1,6 @@
 #+title: elfeed-ai: AI-powered content curation for elfeed
 #+author: Pablo Stafforini
+#+email: pablo@stafforini.com
 #+language: en
 #+options: ':t toc:t author:t email:t num:t
 #+startup: content
@@ -9,44 +10,54 @@
 #+texinfo_dir_title: elfeed-ai: (elfeed-ai)
 #+texinfo_dir_desc: AI-powered content curation for elfeed
 
-This manual describes the features and customization options for the Emacs Lisp package =elfeed-ai=.
+This manual describes the features and customization options for the Emacs Lisp file =elfeed-ai.el=.
 
 * Overview
 :PROPERTIES:
 :CUSTOM_ID: h:overview
 :END:
 
-elfeed-ai adds AI-powered content curation to [[https://github.com/skeeto/elfeed][elfeed]], the Emacs
-feed reader.  It uses [[https://github.com/karthink/gptel][gptel]] to score each entry for relevance against
-a natural-language interest profile, tags entries that meet a
-configurable threshold, displays scores as a column in the search
-buffer, and injects AI-generated summaries into the show buffer.
+=elfeed-ai.el= adds AI-powered content curation to [[https://github.com/skeeto/elfeed][elfeed]], the Emacs
+feed reader.  It solves the problem of information overload: rather
+than manually scanning every entry in your feeds, you describe your
+interests once in natural language, and =elfeed-ai= continuously
+evaluates new entries and surfaces only the content that matters to
+you.
 
-The package solves the problem of information overload: rather than
-manually scanning every entry in your feeds, you describe your
-interests once, and elfeed-ai continuously evaluates new entries and
-surfaces only the content that matters to you.  Entries that score
-above a configurable relevance threshold are tagged =ai-relevant=,
-which you can use in elfeed's standard search filter syntax.
+The package uses [[https://github.com/karthink/gptel][gptel]] to send each entry's title and content to a
+language model, which returns a relevance score between 0.0 and 1.0
+and, optionally, a brief summary.  Entries scoring above a
+configurable threshold are tagged (by default with ~ai-relevant~),
+which you can use in elfeed's standard search filter syntax to view
+only curated content.
 
-elfeed-ai integrates with elfeed through three mechanisms:
+=elfeed-ai= integrates with elfeed through three mechanisms:
 
-- *Automatic scoring* via =elfeed-new-entry-hook=.  When new entries
+- *Automatic scoring* via ~elfeed-new-entry-hook~.  When new entries
   arrive during an elfeed update, they are queued and scored
   asynchronously one at a time.  Each scored entry receives an AI
-  relevance score and a brief summary, stored as =elfeed-meta=
-  properties.
+  relevance score and a brief summary, stored as ~elfeed-meta~
+  properties ([[#h:scoring-entries][Scoring entries]]).
 
 - *Search buffer column*.  A custom
-  =elfeed-search-print-entry-function= adds a score column between
-  the date and title, with color-coded faces for high and low scores.
+  ~elfeed-search-print-entry-function~ adds a score column between the
+  date and title, with color-coded faces for high and low scores
+  ([[#h:faces][Faces]]).
 
-- *Show buffer summary*.  After-advice on =elfeed-show-refresh=
+- *Show buffer summary*.  After-advice on ~elfeed-show-refresh~
   injects the AI-generated summary above the original content, giving
   you a quick overview before reading the full entry.
 
-A daily token budget prevents runaway API costs.  Token usage is
-estimated heuristically and tracked in a small persistence file.
+A daily budget system prevents runaway API costs.  The budget can
+track either estimated tokens or actual dollar cost (the latter
+requires =gptel-plus=), and resets at a configurable hour each day
+([[#h:budget][Budget]]).
+
+The package also provides a [[https://github.com/magit/transient][transient]] menu for interactive adjustment
+of all settings ([[#h:transient-menu][Transient menu]]).
+
+Dependencies: =elfeed= (3.4.1+), =gptel= (0.9+), =transient= (0.7+),
+Emacs 29.1 or later.
 
 * Quick start
 :PROPERTIES:
@@ -63,12 +74,18 @@ estimated heuristically and tracked in a small persistence file.
 (elfeed-ai-mode 1)
 #+end_src
 
-New entries are scored automatically.  Use =+ai-relevant= in your
-elfeed search filter to see only curated content:
+New entries are scored automatically when elfeed fetches them.  Use
+=+ai-relevant= in your elfeed search filter to see only curated
+content:
 
 #+begin_example
 +ai-relevant +unread
 #+end_example
+
+You can also point ~elfeed-ai-interest-profile~ at a file containing a
+longer profile ([[#h:interest-profile][Interest profile]]).  To score entries that arrived
+before you enabled the mode, use =M-x elfeed-ai-score-unscored=
+([[#h:scoring-unscored-entries][Scoring unscored entries]]).
 
 * User options
 :PROPERTIES:
@@ -83,47 +100,100 @@ elfeed search filter to see only curated content:
 #+vindex: elfeed-ai-interest-profile
 The user option ~elfeed-ai-interest-profile~ is a free-form string
 describing your interests in natural language.  This string is included
-verbatim in every AI scoring prompt.  The more specific and descriptive
-it is, the better the AI can judge relevance.  When empty, scoring is
-skipped entirely.
+verbatim in every AI scoring prompt, so the more specific and
+descriptive it is, the better the model can judge relevance.
 
-** Relevance threshold
+The value accepts two forms:
+
+- An inline string (e.g., ~"AI safety, Emacs, functional programming"~).
+- A file path pointing to a readable file whose contents are used as
+  the profile text.  This is useful for lengthy, detailed profiles
+  that would be unwieldy as a Lisp string.
+
+When the value is empty, scoring is skipped entirely---no API calls
+are made.  The default value is an empty string.
+
+The type is ~(choice string file)~.
+
+** Scoring behavior
 :PROPERTIES:
-:CUSTOM_ID: h:relevance-threshold
+:CUSTOM_ID: h:scoring-behavior
 :END:
 
+#+vindex: elfeed-ai-auto-score
+#+vindex: elfeed-ai-generate-summary
 #+vindex: elfeed-ai-relevance-threshold
+#+vindex: elfeed-ai-score-unscored-days
+#+vindex: elfeed-ai-max-content-length
+The user option ~elfeed-ai-auto-score~ controls whether new entries are
+automatically queued for scoring as they arrive via
+~elfeed-new-entry-hook~.  The default is ~t~.  Set it to ~nil~ if you
+prefer to score entries manually with ~elfeed-ai-score~ ([[#h:scoring-entries][Scoring
+entries]]).
+
+The user option ~elfeed-ai-generate-summary~ controls whether the AI
+produces a short summary alongside the relevance score.  The default
+is ~t~.  Summaries are displayed in the show buffer above the original
+content.  Setting this to ~nil~ reduces token usage per entry, which
+is useful if you are on a tight budget ([[#h:budget][Budget]]) or only care about
+the score.
+
 The user option ~elfeed-ai-relevance-threshold~ sets the minimum AI
 score (a float between 0.0 and 1.0) for an entry to receive the
-~elfeed-ai-score-tag~ tag.  The default value is ~0.5~.
+~elfeed-ai-score-tag~ tag.  Entries scoring below this threshold are
+not tagged, though they still retain their score in ~elfeed-meta~.
+The default value is ~0.5~.
 
-** Token budget
-:PROPERTIES:
-:CUSTOM_ID: h:token-budget
-:END:
+The user option ~elfeed-ai-score-unscored-days~ specifies the default
+number of days to look back when invoking ~elfeed-ai-score-unscored~
+([[#h:scoring-unscored-entries][Scoring unscored entries]]).  The default is ~7~.  With a prefix
+argument, the command prompts for a custom number of days, ignoring
+this option.
 
-#+vindex: elfeed-ai-daily-token-budget
-#+vindex: elfeed-ai-budget-reset-hour
-#+vindex: elfeed-ai-budget-file
-The user option ~elfeed-ai-daily-token-budget~ caps the estimated
-number of tokens consumed per day.  The default is ~100000~.  Token
-usage is estimated as one token per four characters.
-
-The user option ~elfeed-ai-budget-reset-hour~ specifies the hour
-(0--23) when the daily budget resets.  The default is ~0~ (midnight).
-
-The user option ~elfeed-ai-budget-file~ specifies the file used to
-persist daily token usage across sessions.
-
-** Content length
-:PROPERTIES:
-:CUSTOM_ID: h:content-length
-:END:
-
-#+vindex: elfeed-ai-max-content-length
 The user option ~elfeed-ai-max-content-length~ sets the maximum number
 of characters of entry content sent to the AI.  Longer content is
-truncated.  The default is ~4000~.
+truncated.  The default is ~4000~.  Increasing this value gives the
+model more context for judging relevance, at the cost of higher token
+usage.
+
+** Budget
+:PROPERTIES:
+:CUSTOM_ID: h:budget
+:END:
+
+#+vindex: elfeed-ai-daily-budget
+#+vindex: elfeed-ai-budget-reset-hour
+#+vindex: elfeed-ai-budget-file
+The user option ~elfeed-ai-daily-budget~ caps daily API usage.  Its
+value is a cons cell of the form ~(TYPE . LIMIT)~, where TYPE is
+either ~tokens~ or ~dollars~.
+
+In ~tokens~ mode, usage is estimated heuristically at one token per
+four characters.  This provides a rough safeguard without requiring
+external cost-tracking infrastructure.
+
+In ~dollars~ mode, actual cost is computed via ~gptel-plus-compute-cost~
+from the =gptel-plus= package.  If =gptel-plus= is not available, the
+budget is not enforced and a warning is logged at startup.  Dollar
+mode also displays the cost of the last 100 scored entries in the
+transient menu heading ([[#h:transient-menu][Transient menu]]), helping you calibrate your
+budget.
+
+The default value is ~(dollars . 1.00)~.  The type is
+~(choice (cons tokens integer) (cons dollars number))~.
+
+The obsolete variable ~elfeed-ai-daily-token-budget~ is superseded by
+~elfeed-ai-daily-budget~ as of version 0.2.0.
+
+The user option ~elfeed-ai-budget-reset-hour~ specifies the hour
+(0--23) at which the daily budget resets.  If the current hour is
+before this value, yesterday's date is used for budget tracking, so a
+late-night scoring session counts against the previous day's budget.
+The default is ~0~ (midnight).
+
+The user option ~elfeed-ai-budget-file~ specifies the file used to
+persist daily usage data across Emacs sessions.  The default is
+=elfeed-ai-budget.eld= in ~user-emacs-directory~.
 
 ** Tags
 :PROPERTIES:
@@ -132,21 +202,66 @@ truncated.  The default is ~4000~.
 
 #+vindex: elfeed-ai-score-tag
 #+vindex: elfeed-ai-scored-tag
-The user option ~elfeed-ai-score-tag~ is the tag added to entries that
-score above the threshold.  The default is ~ai-relevant~.
+The user option ~elfeed-ai-score-tag~ is the tag added to entries whose
+AI score meets or exceeds ~elfeed-ai-relevance-threshold~
+([[#h:scoring-behavior][Scoring behavior]]).  The default is ~ai-relevant~.  You can change
+this to any symbol, then use it in elfeed search filters (e.g.,
+=+my-custom-tag +unread=).
 
 The user option ~elfeed-ai-scored-tag~ is the tag added to all entries
-after scoring, regardless of their score.  The default is ~ai-scored~.
+after scoring, regardless of their score.  This tag prevents an entry
+from being scored again unless the user explicitly requests a re-score
+with a prefix argument ([[#h:scoring-entries][Scoring entries]]).  The default is ~ai-scored~.
 
-** Auto-scoring
+** AI backend and model
 :PROPERTIES:
-:CUSTOM_ID: h:auto-scoring
+:CUSTOM_ID: h:ai-backend-and-model
 :END:
 
-#+vindex: elfeed-ai-auto-score
-The user option ~elfeed-ai-auto-score~ controls whether new entries
-are automatically queued for scoring.  The default is ~t~.  Set to
-~nil~ if you prefer to score entries manually.
+#+vindex: elfeed-ai-backend
+#+vindex: elfeed-ai-model
+The user option ~elfeed-ai-backend~ specifies the gptel backend name
+for AI scoring (e.g., ~"Gemini"~ or ~"Claude"~).  When ~nil~, the
+backend is inferred: if ~elfeed-ai-model~ is set, =elfeed-ai= searches
+~gptel--known-backends~ for a backend that provides that model; if no
+match is found, it falls back to ~gptel-backend~.  The default is
+~nil~.
+
+The user option ~elfeed-ai-model~ specifies the gptel model for AI
+scoring (e.g., ~claude-sonnet-4-5-20250514~).  When ~nil~, defaults to
+~gptel-model~.  The default is ~nil~.
+
+Both options can be adjusted interactively via the transient menu
+([[#h:transient-menu][Transient menu]]).  Setting these options allows you to use a
+different (potentially cheaper or faster) model for feed scoring than
+your default gptel model.
+
+** Display
+:PROPERTIES:
+:CUSTOM_ID: h:display
+:END:
+
+#+vindex: elfeed-ai-sort-by-score
+#+vindex: elfeed-ai-score-high-threshold
+#+vindex: elfeed-ai-score-low-threshold
+The user option ~elfeed-ai-sort-by-score~ controls whether the search
+buffer is sorted by AI score (highest first) when ~elfeed-ai-mode~ is
+active.  Unscored entries are sorted after scored ones; entries with
+equal scores are sorted by date (newest first).  The default is ~t~.
+You can toggle sorting at any time with ~elfeed-ai-toggle-sort~
+([[#h:toggling-sort-order][Toggling sort order]]).
+
+The user option ~elfeed-ai-score-high-threshold~ sets the minimum
+score for the high-score face.  Scores at or above this value are
+rendered with ~elfeed-ai-score-high-face~ ([[#h:faces][Faces]]).  The default is
+~0.7~.
+
+The user option ~elfeed-ai-score-low-threshold~ sets the maximum score
+for the low-score face.  Scores at or below this value are rendered
+with ~elfeed-ai-score-low-face~ ([[#h:faces][Faces]]).  The default is ~0.3~.
+
+Scores between the two thresholds use the default
+~elfeed-ai-score-face~.
 
 * Commands
 :PROPERTIES:
@@ -160,48 +275,225 @@ are automatically queued for scoring.  The default is ~t~.  Set to
 
 #+findex: elfeed-ai-mode
 The command ~elfeed-ai-mode~ is a global minor mode that activates all
-elfeed-ai integrations: automatic scoring of new entries, the score
-column in the search buffer, and summary injection in the show buffer.
+=elfeed-ai= integrations.  When enabled, it:
 
-** Manual scoring
+- Sets ~elfeed-search-print-entry-function~ to a custom function that
+  displays the AI score column ([[#h:search-buffer-display][Search buffer display]]).
+- Installs ~elfeed-ai-sort~ as ~elfeed-search-sort-function~ if
+  ~elfeed-ai-sort-by-score~ is non-nil ([[#h:display][Display]]).
+- Adds ~elfeed-ai--enqueue~ to ~elfeed-new-entry-hook~ if
+  ~elfeed-ai-auto-score~ is non-nil ([[#h:scoring-behavior][Scoring behavior]]).
+- Advises ~elfeed-show-refresh~ to inject AI summaries.
+
+When disabled, all integrations are cleanly removed and the original
+print and sort functions are restored.  The pending scoring queue is
+also cleared.
+
+** Scoring entries
 :PROPERTIES:
-:CUSTOM_ID: h:manual-scoring
+:CUSTOM_ID: h:scoring-entries
 :END:
 
-#+findex: elfeed-ai-score-entry-at-point
-#+findex: elfeed-ai-score-selected
-#+findex: elfeed-ai-score-unscored
-The command ~elfeed-ai-score-entry-at-point~ scores the entry at point
-in either the search or show buffer.
+#+findex: elfeed-ai-score
+The command ~elfeed-ai-score~ is a context-sensitive command for
+scoring entries.  Its behavior depends on the current buffer:
 
-The command ~elfeed-ai-score-selected~ queues all selected entries in
-the search buffer for scoring.
+- In the *show buffer*, it scores the displayed entry.  If the entry
+  has already been scored, it signals an error unless called with a
+  prefix argument (=C-u=), which forces a re-score.  After scoring, it
+  refreshes the show buffer to display the new summary.
 
-The command ~elfeed-ai-score-unscored~ walks the entire elfeed database
-and queues all entries that lack the ~elfeed-ai-scored-tag~ tag.
+- In the *search buffer*, it queues all selected entries (or the entry
+  at point when no region is active) for scoring.  Already-scored
+  entries are skipped unless called with a prefix argument.
 
-** Budget status
+In both cases, the command reports how many entries were queued and how
+many were already scored.  Scoring proceeds asynchronously in the
+background; a message is displayed in the echo area when the batch
+completes, along with the total cost if dollar tracking is available.
+
+** Scoring unscored entries
 :PROPERTIES:
-:CUSTOM_ID: h:budget-status
+:CUSTOM_ID: h:scoring-unscored-entries
+:END:
+
+#+findex: elfeed-ai-score-unscored
+The command ~elfeed-ai-score-unscored~ walks the entire elfeed
+database and queues all entries from the last N days that lack the
+~elfeed-ai-scored-tag~ tag.  By default, N is the value of
+~elfeed-ai-score-unscored-days~ ([[#h:scoring-behavior][Scoring behavior]]).  With a prefix
+argument (=C-u=), the command prompts for a custom number of days.
+
+This is useful when you first enable =elfeed-ai= on an existing elfeed
+database, or after changing your interest profile and wanting to
+re-evaluate recent entries.  Note that re-evaluation requires first
+removing the ~elfeed-ai-scored-tag~ from the entries you want to
+re-score, since this command only targets unscored entries.
+
+** Checking budget status
+:PROPERTIES:
+:CUSTOM_ID: h:checking-budget-status
 :END:
 
 #+findex: elfeed-ai-budget-status
-The command ~elfeed-ai-budget-status~ displays the current daily token
-usage in the echo area.
+The command ~elfeed-ai-budget-status~ displays the current daily usage
+in the echo area.  In ~tokens~ mode, it shows tokens used versus the
+limit.  In ~dollars~ mode, it shows the dollar amount used versus the
+limit.  Both modes show the remaining budget.
+
+** Toggling sort order
+:PROPERTIES:
+:CUSTOM_ID: h:toggling-sort-order
+:END:
+
+#+findex: elfeed-ai-toggle-sort
+The command ~elfeed-ai-toggle-sort~ switches between sorting the
+search buffer by AI score (highest first) and the original sort order
+(typically by date).  When score sorting is enabled,
+~elfeed-search-sort-function~ is set to ~elfeed-ai-sort~
+([[#h:sorting][Sorting]]); when disabled, the function saved before =elfeed-ai=
+modified it is restored.
+
+The search buffer is refreshed immediately after toggling.  This
+command is also available in the transient menu ([[#h:transient-menu][Transient menu]]).
+
+** Transient menu
+:PROPERTIES:
+:CUSTOM_ID: h:transient-menu
+:END:
+
+#+findex: elfeed-ai-menu
+The command ~elfeed-ai-menu~ opens a [[https://github.com/magit/transient][transient]] menu providing
+centralized access to all =elfeed-ai= commands and settings.  The menu
+is organized into four groups:
+
+- *Score*: commands for scoring the current entry or selection
+  (~elfeed-ai-score~) and for scoring unscored entries
+  (~elfeed-ai-score-unscored~).
+
+- *Display*: toggles for sort order (~elfeed-ai-toggle-sort~) and the
+  minor mode (~elfeed-ai-mode~).
+
+- *Scoring*: interactive adjustment of the AI model, auto-scoring,
+  summary generation, relevance threshold, max content length, and the
+  number of days for ~elfeed-ai-score-unscored~.
+
+- *Budget*: toggle between token and dollar budget types, and set the
+  budget limit.  In dollar mode, the group heading displays the total
+  cost of the last 100 scored entries, helping you calibrate the
+  daily limit.
+
+Changes made through the transient menu take effect immediately but
+are not persisted across sessions.  To make them permanent, set the
+corresponding user options in your init file.
+
+* Functions
+:PROPERTIES:
+:CUSTOM_ID: h:functions
+:END:
+
+** Scoring
+:PROPERTIES:
+:CUSTOM_ID: h:scoring
+:END:
+
+#+findex: elfeed-ai-score-entry
+The function ~elfeed-ai-score-entry~ is the core scoring function.  It
+takes an elfeed ENTRY and a CALLBACK, sends the entry to the
+configured AI backend via ~gptel-request~, and calls CALLBACK with a
+~(score . summary)~ cons cell on success or ~nil~ on failure.
+
+Before making the API call, the function checks three preconditions:
+the interest profile must be non-empty, the daily budget must not be
+exhausted, and the entry must have at least a title or content.  If
+any check fails, CALLBACK is called with ~nil~ immediately.
+
+The function constructs a system message containing the interest
+profile and scoring instructions, and a user message containing the
+entry's title, author, and truncated content.  The system message is
+marked for prompt caching via ~gptel-use-cache~, so that repeated
+scoring requests reuse the cached system prompt.
+
+On receiving a response, the function parses the JSON, records token
+and cost usage ([[#h:budget][Budget]]), stores the score and summary as
+~elfeed-meta~ properties on the entry, and applies or removes the
+relevance tag based on ~elfeed-ai-relevance-threshold~
+([[#h:scoring-behavior][Scoring behavior]]).
+
+#+findex: elfeed-ai-budget-exhausted-p
+The function ~elfeed-ai-budget-exhausted-p~ returns non-nil if today's
+budget is exhausted.  This is useful in custom hooks or conditions
+where you want to check whether scoring will proceed before queuing
+entries.
+
+** Search buffer display
+:PROPERTIES:
+:CUSTOM_ID: h:search-buffer-display
+:END:
+
+#+findex: elfeed-ai-search-print-entry
+The function ~elfeed-ai-search-print-entry~ is the custom
+~elfeed-search-print-entry-function~ installed by ~elfeed-ai-mode~.
+It renders each entry with the standard date, title, feed, and tags
+columns, plus an additional score column between the date and title.
+
+The score column is 6 characters wide.  Scored entries display their
+score as a four-character float (e.g., =0.85=); unscored entries
+display =  - =.  The score is propertized with one of three faces
+depending on the thresholds ([[#h:display][Display]]):
+
+- ~elfeed-ai-score-high-face~ for scores at or above
+  ~elfeed-ai-score-high-threshold~.
+- ~elfeed-ai-score-low-face~ for scores at or below
+  ~elfeed-ai-score-low-threshold~.
+- ~elfeed-ai-score-face~ for scores in between, or for unscored
+  entries.
+
+** Sorting
+:PROPERTIES:
+:CUSTOM_ID: h:sorting
+:END:
+
+#+findex: elfeed-ai-sort
+The function ~elfeed-ai-sort~ is the sort predicate installed as
+~elfeed-search-sort-function~ when score sorting is active.  It sorts
+entries by descending AI score, with unscored entries (which have no
+~:ai-score~ metadata) placed after all scored entries.  Entries with
+equal scores are sorted by date (newest first).
+
+Internally, unscored entries are assigned a sentinel value of ~-1.0~,
+which is below the valid score range of 0.0--1.0, ensuring they
+always appear last.
 
 * Faces
 :PROPERTIES:
 :CUSTOM_ID: h:faces
 :END:
 
-- ~elfeed-ai-score-face~ --- default face for scores in the search
-  buffer.
-- ~elfeed-ai-score-high-face~ --- face for scores at or above
-  ~elfeed-ai-score-high-threshold~ (inherits from ~success~).
-- ~elfeed-ai-score-low-face~ --- face for scores at or below
-  ~elfeed-ai-score-low-threshold~ (inherits from ~shadow~).
+=elfeed-ai= defines four faces for visual presentation of AI data:
+
+- ~elfeed-ai-score-face~ --- the default face for mid-range AI scores
+  in the search buffer.  Inherits from ~shadow~.  Applied to scores
+  between ~elfeed-ai-score-low-threshold~ and
+  ~elfeed-ai-score-high-threshold~, and to unscored entries.
+
+- ~elfeed-ai-score-high-face~ --- face for high AI scores in the
+  search buffer.  Inherits from ~success~ with bold weight.  Applied
+  to scores at or above ~elfeed-ai-score-high-threshold~ (default
+  ~0.7~).
+
+- ~elfeed-ai-score-low-face~ --- face for low AI scores in the search
+  buffer.  Inherits from ~shadow~.  Applied to scores at or below
+  ~elfeed-ai-score-low-threshold~ (default ~0.3~).
+
 - ~elfeed-ai-summary-heading-face~ --- face for the "AI Summary"
-  heading in the show buffer.
+  heading in the show buffer.  Inherits from ~font-lock-keyword-face~
+  with bold weight.
+
+You can customize these faces with =M-x customize-face= or by setting
+them in your init file.  The score thresholds that determine which
+face is used are controlled by ~elfeed-ai-score-high-threshold~ and
+~elfeed-ai-score-low-threshold~ ([[#h:display][Display]]).
 
 * Indices
 :PROPERTIES:
