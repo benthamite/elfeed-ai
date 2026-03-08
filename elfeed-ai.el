@@ -93,13 +93,13 @@ not enforced."
                         'elfeed-ai-daily-budget "0.2.0")
 
 (defcustom elfeed-ai-budget-reset-hour 0
-  "Hour of day (0-23) when the daily token budget resets."
+  "Hour of day (0-23) when the daily budget resets."
   :type 'integer
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-budget-file
   (expand-file-name "elfeed-ai-budget.eld" user-emacs-directory)
-  "File for persisting daily token budget data."
+  "File for persisting daily budget data."
   :type 'file
   :group 'elfeed-ai)
 
@@ -249,7 +249,7 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
   "Accumulated cost for the current batch.")
 
 (defvar elfeed-ai--budget-cache nil
-  "Cached budget data: alist with `date' and `tokens-used' keys.")
+  "Cached budget data: alist with `date', `tokens-used', and `dollars-used' keys.")
 
 (defvar elfeed-ai--original-print-entry-function nil
   "Original value of `elfeed-search-print-entry-function'.")
@@ -258,7 +258,9 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
   "Original value of `elfeed-search-sort-function'.")
 
 (defvar elfeed-ai--last-token-limit 100000
-  "Last token budget limit, saved when switching to dollar mode.")
+  "Last token budget limit, saved when switching to dollar mode.
+The default approximates the cost of scoring ~100 entries with a
+medium-sized model (roughly 1000 tokens per request).")
 
 (defvar elfeed-ai--last-dollar-limit 1.00
   "Last dollar budget limit, saved when switching to token mode.")
@@ -498,6 +500,9 @@ CALLBACK is called with (score . summary) on success, or nil."
            (model (cdr resolved))
            (gptel-backend backend)
            (gptel-model model)
+           ;; Cache the system message across requests: it contains
+           ;; the interest profile and scoring instructions, which are
+           ;; identical for every entry and expensive to re-process.
            (gptel-use-cache '(system)))
       (gptel-request prompt
         :system system
@@ -595,7 +600,7 @@ CALLBACK is called with (score . summary) on success, or nil."
                       ((<= score elfeed-ai-score-low-threshold)
                        'elfeed-ai-score-low-face)
                       (t 'elfeed-ai-score-face)))
-         (score-width 6) ; "0.85" or "  - " (4) + padding
+         (score-width 6) ; 4 chars ("0.85" or "  - ") + 2 for spacing
          ;; 10 accounts for the date column, matching elfeed's default.
          (title-width (- (window-width) 10 score-width
                          elfeed-search-trailing-width))
@@ -619,6 +624,8 @@ CALLBACK is called with (score . summary) on success, or nil."
   "Sort predicate for elfeed entries: highest AI score first.
 Unscored entries sort after scored ones.  Entries with equal
 scores are sorted by date (newest first)."
+  ;; Use -1.0 as sentinel for unscored entries so they sort below any
+  ;; real score (which ranges from 0.0 to 1.0).
   (let ((score-a (or (elfeed-meta a :ai-score) -1.0))
         (score-b (or (elfeed-meta b :ai-score) -1.0)))
     (if (/= score-a score-b)
@@ -664,7 +671,8 @@ restored."
            "\n\n"
            summary
            "\n\n"
-           (propertize (make-string 60 ?─) 'face 'shadow) ; visual separator
+           ;; Width roughly matches a typical body column.
+           (propertize (make-string 60 ?─) 'face 'shadow)
 
            "\n\n"))))))
 
@@ -784,7 +792,7 @@ argument, prompt for the number of days."
 
 ;;;###autoload
 (defun elfeed-ai-budget-status ()
-  "Display the current AI token budget status."
+  "Display the current AI budget status."
   (interactive)
   (let ((used (elfeed-ai--budget-used))
         (limit (elfeed-ai--budget-limit))
