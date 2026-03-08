@@ -870,7 +870,7 @@ argument, prompt for the number of days."
   "Transient menu for elfeed-ai."
   [["Score"
     ("s" "Score entry/selection" elfeed-ai-score)
-    ("u" "Score unscored entries" elfeed-ai-score-unscored)]
+    ("S" "Score unscored entries" elfeed-ai-score-unscored)]
    ["Display"
     ("t" "Toggle sort by score" elfeed-ai-toggle-sort)
     ("m" "Toggle mode" elfeed-ai-mode)]
