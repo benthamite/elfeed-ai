@@ -791,24 +791,6 @@ argument, prompt for the number of days."
 
 ;;;; Transient menu
 
-(defun elfeed-ai--format-budget ()
-  "Return a formatted string describing the current budget status."
-  (elfeed-ai--ensure-budget)
-  (let ((used (alist-get 'used elfeed-ai--budget-cache 0))
-        (limit (elfeed-ai--budget-limit)))
-    (pcase (elfeed-ai--budget-type)
-      ('tokens (format "%d/%d tokens" used limit))
-      ('dollars (format "$%.4f/$%.2f" used limit)))))
-
-(defun elfeed-ai--format-queue ()
-  "Return a formatted string describing the queue status."
-  (let ((pending (length elfeed-ai--pending-queue)))
-    (if elfeed-ai--scoring-in-progress
-        (format "%d pending (scoring)" pending)
-      (if (> pending 0)
-          (format "%d pending" pending)
-        "idle"))))
-
 (transient-define-infix elfeed-ai--set-auto-score ()
   :class 'transient-lisp-variable
   :variable 'elfeed-ai-auto-score
@@ -842,27 +824,60 @@ argument, prompt for the number of days."
   :reader (lambda (prompt _initial-input _history)
             (read-number prompt elfeed-ai-score-unscored-days)))
 
+(transient-define-infix elfeed-ai--set-model ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-model
+  :description "AI model"
+  :reader (lambda (prompt _initial-input _history)
+            (let ((input (read-string
+                          prompt
+                          (when elfeed-ai-model
+                            (symbol-name elfeed-ai-model)))))
+              (if (string-empty-p input) nil (intern input)))))
+
+(transient-define-infix elfeed-ai--set-budget-type ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-daily-budget
+  :description "Budget type"
+  :reader (lambda (&rest _)
+            (let ((new-type (if (eq (elfeed-ai--budget-type) 'tokens)
+                                'dollars 'tokens)))
+              (cons new-type (elfeed-ai--budget-limit)))))
+
+(transient-define-infix elfeed-ai--set-budget-limit ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-daily-budget
+  :description
+  (lambda ()
+    (elfeed-ai--ensure-budget)
+    (let ((used (alist-get 'used elfeed-ai--budget-cache 0)))
+      (pcase (elfeed-ai--budget-type)
+        ('tokens (format "Budget limit (used %d)" used))
+        ('dollars (format "Budget limit (used $%.4f)" used)))))
+  :reader (lambda (prompt _initial-input _history)
+            (cons (elfeed-ai--budget-type)
+                  (read-number prompt (elfeed-ai--budget-limit)))))
+
 ;;;###autoload
 (transient-define-prefix elfeed-ai-menu ()
   "Transient menu for elfeed-ai."
-  [:description
-   (lambda () (format "elfeed-ai  [budget: %s]  [queue: %s]"
-                      (elfeed-ai--format-budget)
-                      (elfeed-ai--format-queue)))
-   ["Score"
+  [["Score"
     ("s" "Score entry at point" elfeed-ai-score-entry-at-point)
     ("S" "Score selected entries" elfeed-ai-score-selected)
-    ("u" "Score unscored entries" elfeed-ai-score-unscored)
-    ("b" "Budget status" elfeed-ai-budget-status)]
+    ("u" "Score unscored entries" elfeed-ai-score-unscored)]
    ["Display"
     ("t" "Toggle sort by score" elfeed-ai-toggle-sort)
     ("m" "Toggle mode" elfeed-ai-mode)]
-   ["Options"
+   ["Scoring"
+    ("om" elfeed-ai--set-model)
     ("oa" elfeed-ai--set-auto-score)
     ("os" elfeed-ai--set-generate-summary)
     ("or" elfeed-ai--set-relevance-threshold)
     ("ol" elfeed-ai--set-max-content-length)
-    ("od" elfeed-ai--set-score-unscored-days)]])
+    ("od" elfeed-ai--set-score-unscored-days)]
+   ["Budget"
+    ("bt" elfeed-ai--set-budget-type)
+    ("bl" elfeed-ai--set-budget-limit)]])
 
 (provide 'elfeed-ai)
 ;;; elfeed-ai.el ends here
