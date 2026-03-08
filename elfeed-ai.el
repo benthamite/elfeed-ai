@@ -203,6 +203,7 @@ contents; otherwise return the value itself."
   (let ((val elfeed-ai-interest-profile))
     (if (and (stringp val)
              (not (string-empty-p val))
+             (file-regular-p val)
              (file-readable-p val))
         (string-trim (with-temp-buffer
                        (insert-file-contents val)
@@ -255,6 +256,12 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
 
 (defvar elfeed-ai--original-sort-function nil
   "Original value of `elfeed-search-sort-function'.")
+
+(defvar elfeed-ai--last-token-limit 100000
+  "Last token budget limit, saved when switching to dollar mode.")
+
+(defvar elfeed-ai--last-dollar-limit 1.00
+  "Last dollar budget limit, saved when switching to token mode.")
 
 ;;;; Budget tracking
 
@@ -547,7 +554,9 @@ CALLBACK is called with (score . summary) on success, or nil."
            (cl-incf elfeed-ai--batch-count)
            (when-let ((cost (elfeed-meta entry :ai-cost)))
              (cl-incf elfeed-ai--batch-cost cost)))
-         (elfeed-ai--process-queue))))))
+         ;; Defer to avoid deep recursion when callbacks fire synchronously
+         ;; (e.g. empty profile, no content).
+         (run-at-time 0 nil #'elfeed-ai--process-queue))))))
 
 (defun elfeed-ai--refresh-search ()
   "Refresh the elfeed search buffer if it exists."
@@ -680,10 +689,15 @@ buffer displays AI-generated summaries above the original content."
   (setq elfeed-search-print-entry-function
         #'elfeed-ai-search-print-entry)
   (when elfeed-ai-sort-by-score
-    (setq elfeed-ai--original-sort-function elfeed-search-sort-function)
+    (unless (eq elfeed-search-sort-function #'elfeed-ai-sort)
+      (setq elfeed-ai--original-sort-function elfeed-search-sort-function))
     (setq elfeed-search-sort-function #'elfeed-ai-sort))
   (when elfeed-ai-auto-score
     (add-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue))
+  (when (and (eq (elfeed-ai--budget-type) 'dollars)
+             (not (require 'gptel-plus nil t)))
+    (elfeed-log 'warn
+                "elfeed-ai: dollar budget requires gptel-plus; budget will not be enforced"))
   (advice-add 'elfeed-show-refresh :after #'elfeed-ai--show-inject-summary))
 
 (defun elfeed-ai--disable ()
@@ -692,9 +706,11 @@ buffer displays AI-generated summaries above the original content."
     (setq elfeed-search-print-entry-function
           elfeed-ai--original-print-entry-function)
     (setq elfeed-ai--original-print-entry-function nil))
-  (when elfeed-ai-sort-by-score
-    (setq elfeed-search-sort-function elfeed-ai--original-sort-function)
-    (setq elfeed-ai--original-sort-function nil))
+  (when (eq elfeed-search-sort-function #'elfeed-ai-sort)
+    (setq elfeed-search-sort-function elfeed-ai--original-sort-function))
+  (setq elfeed-ai--original-sort-function nil)
+  (setq elfeed-ai--pending-queue nil
+        elfeed-ai--scoring-in-progress nil)
   (remove-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue)
   (advice-remove 'elfeed-show-refresh #'elfeed-ai--show-inject-summary))
 
@@ -833,9 +849,13 @@ argument, prompt for the number of days."
   :variable 'elfeed-ai-daily-budget
   :description "Budget type"
   :reader (lambda (&rest _)
-            (if (eq (elfeed-ai--budget-type) 'tokens)
-                '(dollars . 1.00)
-              '(tokens . 100000))))
+            (pcase (elfeed-ai--budget-type)
+              ('tokens
+               (setq elfeed-ai--last-token-limit (elfeed-ai--budget-limit))
+               (cons 'dollars elfeed-ai--last-dollar-limit))
+              ('dollars
+               (setq elfeed-ai--last-dollar-limit (elfeed-ai--budget-limit))
+               (cons 'tokens elfeed-ai--last-token-limit)))))
 
 (defclass elfeed-ai--budget-limit-variable (transient-lisp-variable) ()
   "Transient variable that displays only the budget limit.")
