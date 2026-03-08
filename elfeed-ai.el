@@ -4,7 +4,7 @@
 
 ;; Author: Pablo Stafforini
 ;; Keywords: comm, news
-;; Package-Requires: ((emacs "29.1") (elfeed "3.4.1") (gptel "0.9"))
+;; Package-Requires: ((emacs "29.1") (elfeed "3.4.1") (gptel "0.9") (transient "0.7"))
 ;; Version: 0.1.0
 
 ;; This file is NOT part of GNU Emacs.
@@ -52,6 +52,7 @@
 (require 'elfeed-show)
 (require 'gptel)
 (require 'json)
+(require 'transient)
 
 ;;;; Customization group
 
@@ -637,7 +638,7 @@ restored."
   "Inject AI summary at the top of the elfeed show buffer."
   (when-let* ((entry elfeed-show-entry)
               (summary (elfeed-meta entry :ai-summary))
-              (_non-empty (not (string-empty-p summary))))
+              ((not (string-empty-p summary))))
     (let ((inhibit-read-only t)
           (score (elfeed-meta entry :ai-score))
           (cost (elfeed-meta entry :ai-cost)))
@@ -787,6 +788,81 @@ argument, prompt for the number of days."
       ('dollars
        (message "elfeed-ai: $%.4f/$%.2f used ($%.4f remaining)"
                 used limit remaining)))))
+
+;;;; Transient menu
+
+(defun elfeed-ai--format-budget ()
+  "Return a formatted string describing the current budget status."
+  (elfeed-ai--ensure-budget)
+  (let ((used (alist-get 'used elfeed-ai--budget-cache 0))
+        (limit (elfeed-ai--budget-limit)))
+    (pcase (elfeed-ai--budget-type)
+      ('tokens (format "%d/%d tokens" used limit))
+      ('dollars (format "$%.4f/$%.2f" used limit)))))
+
+(defun elfeed-ai--format-queue ()
+  "Return a formatted string describing the queue status."
+  (let ((pending (length elfeed-ai--pending-queue)))
+    (if elfeed-ai--scoring-in-progress
+        (format "%d pending (scoring)" pending)
+      (if (> pending 0)
+          (format "%d pending" pending)
+        "idle"))))
+
+(transient-define-infix elfeed-ai--set-auto-score ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-auto-score
+  :description "Auto-score new entries"
+  :reader (lambda (&rest _) (not elfeed-ai-auto-score)))
+
+(transient-define-infix elfeed-ai--set-generate-summary ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-generate-summary
+  :description "Generate summaries"
+  :reader (lambda (&rest _) (not elfeed-ai-generate-summary)))
+
+(transient-define-infix elfeed-ai--set-relevance-threshold ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-relevance-threshold
+  :description "Relevance threshold"
+  :reader (lambda (prompt _initial-input _history)
+            (read-number prompt elfeed-ai-relevance-threshold)))
+
+(transient-define-infix elfeed-ai--set-max-content-length ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-max-content-length
+  :description "Max content length"
+  :reader (lambda (prompt _initial-input _history)
+            (read-number prompt elfeed-ai-max-content-length)))
+
+(transient-define-infix elfeed-ai--set-score-unscored-days ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-score-unscored-days
+  :description "Days to look back"
+  :reader (lambda (prompt _initial-input _history)
+            (read-number prompt elfeed-ai-score-unscored-days)))
+
+;;;###autoload
+(transient-define-prefix elfeed-ai-menu ()
+  "Transient menu for elfeed-ai."
+  [:description
+   (lambda () (format "elfeed-ai  [budget: %s]  [queue: %s]"
+                      (elfeed-ai--format-budget)
+                      (elfeed-ai--format-queue)))
+   ["Score"
+    ("s" "Score entry at point" elfeed-ai-score-entry-at-point)
+    ("S" "Score selected entries" elfeed-ai-score-selected)
+    ("u" "Score unscored entries" elfeed-ai-score-unscored)
+    ("b" "Budget status" elfeed-ai-budget-status)]
+   ["Display"
+    ("t" "Toggle sort by score" elfeed-ai-toggle-sort)
+    ("m" "Toggle mode" elfeed-ai-mode)]
+   ["Options"
+    ("oa" elfeed-ai--set-auto-score)
+    ("os" elfeed-ai--set-generate-summary)
+    ("or" elfeed-ai--set-relevance-threshold)
+    ("ol" elfeed-ai--set-max-content-length)
+    ("od" elfeed-ai--set-score-unscored-days)]])
 
 (provide 'elfeed-ai)
 ;;; elfeed-ai.el ends here
