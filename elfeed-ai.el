@@ -263,6 +263,10 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
 (defvar elfeed-ai--last-dollar-limit 1.00
   "Last dollar budget limit, saved when switching to token mode.")
 
+(defvar elfeed-ai--last-100-cost-cache 'unset
+  "Cached cost of the last 100 scored entries.
+The symbol `unset' means the cache needs recomputation.")
+
 ;;;; Budget tracking
 
 (defun elfeed-ai--budget-date-string ()
@@ -463,7 +467,8 @@ or nil."
   (setf (elfeed-meta entry :ai-score) (car result))
   (setf (elfeed-meta entry :ai-summary) (cdr result))
   (when cost
-    (setf (elfeed-meta entry :ai-cost) cost))
+    (setf (elfeed-meta entry :ai-cost) cost)
+    (setq elfeed-ai--last-100-cost-cache 'unset))
   (elfeed-tag entry elfeed-ai-scored-tag)
   (if (>= (car result) elfeed-ai-relevance-threshold)
       (elfeed-tag entry elfeed-ai-score-tag)
@@ -894,8 +899,10 @@ Returns nil if no entries have cost data."
 
 (defun elfeed-ai--format-last-100-cost ()
   "Return a string describing the cost of the last 100 scored entries."
-  (if-let ((cost (elfeed-ai--last-n-cost 100)))
-      (format "Last 100 entries: $%.4f" cost)
+  (when (eq elfeed-ai--last-100-cost-cache 'unset)
+    (setq elfeed-ai--last-100-cost-cache (elfeed-ai--last-n-cost 100)))
+  (if elfeed-ai--last-100-cost-cache
+      (format "Last 100 entries: $%.4f" elfeed-ai--last-100-cost-cache)
     "Last 100 entries: n/a"))
 
 (defun elfeed-ai--budget-heading ()
