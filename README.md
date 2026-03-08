@@ -49,7 +49,9 @@ Requires Emacs 29.1 or later, plus [elfeed](https://github.com/skeeto/elfeed) (3
 
 Run `M-x elfeed-update` as usual. New entries are scored automatically, and those meeting the relevance threshold are tagged `ai-relevant`. Filter your search buffer with `+ai-relevant +unread` to see curated content.
 
-To score entries that arrived before you enabled the mode, use `M-x elfeed-ai-score-unscored`. To open the settings menu, use `M-x elfeed-ai-menu`.
+To score entries that arrived before you enabled the mode, use `M-x elfeed-ai-score-unscored`. `elfeed-ai` will then score all and only the entries published in a number of past days equal to `elfeed-ai-score-unscored-days` (set to `7` by default).
+
+You can explore other relevant commands and user options with `M-x elfeed-ai-menu`.
 
 ## Documentation
 
