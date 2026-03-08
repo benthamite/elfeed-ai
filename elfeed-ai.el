@@ -865,6 +865,25 @@ argument, prompt for the number of days."
             (cons (elfeed-ai--budget-type)
                   (read-number prompt (elfeed-ai--budget-limit)))))
 
+(defun elfeed-ai--last-n-cost (n)
+  "Return the total cost of the last N scored entries, or nil.
+Returns nil if no entries have cost data."
+  (let (costs)
+    (with-elfeed-db-visit (entry _feed)
+      (when-let ((cost (elfeed-meta entry :ai-cost)))
+        (push (cons (elfeed-entry-date entry) cost) costs)))
+    (when costs
+      (setq costs (sort costs (lambda (a b) (> (car a) (car b)))))
+      (cl-loop for (_date . cost) in costs
+               repeat n
+               sum cost))))
+
+(defun elfeed-ai--format-last-100-cost ()
+  "Return a string describing the cost of the last 100 scored entries."
+  (if-let ((cost (elfeed-ai--last-n-cost 100)))
+      (format "Last 100 entries: $%.4f" cost)
+    "Last 100 entries: n/a"))
+
 ;;;###autoload
 (transient-define-prefix elfeed-ai-menu ()
   "Transient menu for elfeed-ai."
@@ -881,7 +900,7 @@ argument, prompt for the number of days."
     ("-r" elfeed-ai--set-relevance-threshold)
     ("-l" elfeed-ai--set-max-content-length)
     ("-d" elfeed-ai--set-score-unscored-days)]
-   ["Budget"
+   [:description elfeed-ai--format-last-100-cost
     ("-t" elfeed-ai--set-budget-type)
     ("-b" elfeed-ai--set-budget-limit)]])
 
