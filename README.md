@@ -4,7 +4,7 @@
 
 ![elfeed-ai search buffer sorted by relevance score](screenshot.png)
 
-Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Scores are stored as entry metadata, so you can sort by relevance. Optionally, set `elfeed-ai-relevance-threshold` to tag entries above a cutoff (e.g., `+elfeed-ai +unread`).
+Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Scores are stored as entry metadata, so you can sort by relevance.
 
 Key capabilities:
 
