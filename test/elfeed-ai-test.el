@@ -185,24 +185,20 @@
   "Apply-result stores score, summary, and cost on entry."
   (let ((elfeed-ai-relevance-threshold 0.5)
         (elfeed-ai-score-tag 'elfeed-ai)
-        (elfeed-ai-scored-tag 'ai-scored)
         (entry (elfeed-entry--create :title "Test")))
     (elfeed-ai--apply-result entry '(0.8 . "Great article.") 0.0012)
     (should (= (elfeed-meta entry :ai-score) 0.8))
     (should (equal (elfeed-meta entry :ai-summary) "Great article."))
     (should (= (elfeed-meta entry :ai-cost) 0.0012))
-    (should (memq 'ai-scored (elfeed-entry-tags entry)))
     (should (memq 'elfeed-ai (elfeed-entry-tags entry)))))
 
 (ert-deftest elfeed-ai-test-apply-result-below-threshold ()
   "Apply-result does not tag entries below the threshold."
   (let ((elfeed-ai-relevance-threshold 0.5)
         (elfeed-ai-score-tag 'elfeed-ai)
-        (elfeed-ai-scored-tag 'ai-scored)
         (entry (elfeed-entry--create :title "Test")))
     (elfeed-ai--apply-result entry '(0.3 . "Not relevant.") nil)
     (should (= (elfeed-meta entry :ai-score) 0.3))
-    (should (memq 'ai-scored (elfeed-entry-tags entry)))
     (should-not (memq 'elfeed-ai (elfeed-entry-tags entry)))))
 
 (provide 'elfeed-ai-test)

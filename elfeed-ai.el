@@ -114,10 +114,6 @@ Longer content is truncated."
   :type 'symbol
   :group 'elfeed-ai)
 
-(defcustom elfeed-ai-scored-tag 'ai-scored
-  "Tag added to entries after AI scoring, regardless of score."
-  :type 'symbol
-  :group 'elfeed-ai)
 
 (defcustom elfeed-ai-backend nil
   "The gptel backend name for AI scoring, e.g. \"Gemini\" or \"Claude\".
@@ -481,7 +477,6 @@ or nil."
   (when cost
     (setf (elfeed-meta entry :ai-cost) cost)
     (setq elfeed-ai--last-100-cost-cache 'unset))
-  (elfeed-tag entry elfeed-ai-scored-tag)
   (if (>= (car result) elfeed-ai-relevance-threshold)
       (elfeed-tag entry elfeed-ai-score-tag)
     (elfeed-untag entry elfeed-ai-score-tag)))
@@ -537,7 +532,7 @@ CALLBACK is called with (score . summary) on success, or nil."
 
 (defun elfeed-ai--enqueue (entry)
   "Add ENTRY to the scoring queue and start processing if idle."
-  (unless (or (elfeed-tagged-p elfeed-ai-scored-tag entry)
+  (unless (or (elfeed-meta entry :ai-score)
               (memq entry elfeed-ai--pending-queue))
     (push entry elfeed-ai--pending-queue))
   (when (and elfeed-ai--pending-queue
@@ -815,9 +810,9 @@ scored entries."
    ((derived-mode-p 'elfeed-show-mode)
     (let ((entry elfeed-show-entry))
       (unless entry (user-error "No entry"))
-      (when (and (not force) (elfeed-tagged-p elfeed-ai-scored-tag entry))
+      (when (and (not force) (elfeed-meta entry :ai-score))
         (user-error "Entry already scored (%.2f); use C-u to re-score"
-                    (or (elfeed-meta entry :ai-score) 0)))
+                    (elfeed-meta entry :ai-score)))
       (message "elfeed-ai: scoring...")
       (elfeed-ai-score-entry
        entry
@@ -833,11 +828,11 @@ scored entries."
            (to-score (if force
                          entries
                        (cl-remove-if
-                        (lambda (e) (elfeed-tagged-p elfeed-ai-scored-tag e))
+                        (lambda (e) (elfeed-meta e :ai-score))
                         entries))))
       (dolist (entry to-score)
         (when force
-          (elfeed-untag entry elfeed-ai-scored-tag))
+          (setf (elfeed-meta entry :ai-score) nil))
         (elfeed-ai--enqueue entry))
       (message "elfeed-ai: queued %d entries for scoring (%d already scored)"
                (length to-score) (- (length entries) (length to-score)))))
@@ -859,7 +854,7 @@ argument, prompt for the number of days."
                                    24 60 60)))))
     (with-elfeed-db-visit (entry _feed)
       (when (and (> (elfeed-entry-date entry) cutoff)
-                 (not (elfeed-tagged-p elfeed-ai-scored-tag entry)))
+                 (not (elfeed-meta entry :ai-score)))
         (elfeed-ai--enqueue entry)
         (cl-incf count)))
     (message "elfeed-ai: queued %d entries for scoring" count)))

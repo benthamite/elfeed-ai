@@ -213,17 +213,11 @@ persist daily usage data across Emacs sessions.  The default is
 :END:
 
 #+vindex: elfeed-ai-score-tag
-#+vindex: elfeed-ai-scored-tag
 The user option ~elfeed-ai-score-tag~ is the tag added to entries whose
 AI score meets or exceeds ~elfeed-ai-relevance-threshold~
 ([[#h:scoring-behavior][Scoring behavior]]).  The default is ~elfeed-ai~.  You can change
 this to any symbol, then use it in elfeed search filters (e.g.,
 =+my-custom-tag +unread=).
-
-The user option ~elfeed-ai-scored-tag~ is the tag added to all entries
-after scoring, regardless of their score.  This tag prevents an entry
-from being scored again unless the user explicitly requests a re-score
-with a prefix argument ([[#h:scoring-entries][Scoring entries]]).  The default is ~ai-scored~.
 
 ** AI backend and model
 :PROPERTIES:
@@ -334,16 +328,14 @@ completes, along with the total cost if dollar tracking is available.
 
 #+findex: elfeed-ai-score-unscored
 The command ~elfeed-ai-score-unscored~ walks the entire elfeed
-database and queues all entries from the last N days that lack the
-~elfeed-ai-scored-tag~ tag.  By default, N is the value of
+database and queues all entries from the last N days that have not yet
+been scored.  By default, N is the value of
 ~elfeed-ai-score-unscored-days~ ([[#h:scoring-behavior][Scoring behavior]]).  With a prefix
 argument (=C-u=), the command prompts for a custom number of days.
 
 This is useful when you first enable =elfeed-ai= on an existing elfeed
 database, or after changing your interest profile and wanting to
-re-evaluate recent entries.  Note that re-evaluation requires first
-removing the ~elfeed-ai-scored-tag~ from the entries you want to
-re-score, since this command only targets unscored entries.
+re-evaluate recent entries.
 
 ** Checking budget status
 :PROPERTIES:
