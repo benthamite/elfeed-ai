@@ -26,10 +26,10 @@ you.
 
 The package uses [[https://github.com/karthink/gptel][gptel]] to send each entry's title and content to a
 language model, which returns a relevance score between 0.0 and 1.0
-and, optionally, a brief summary.  Entries scoring above a
-configurable threshold are tagged (by default with ~elfeed-ai~),
-which you can use in elfeed's standard search filter syntax to view
-only curated content.
+and, optionally, a brief summary.  If ~elfeed-ai-relevance-threshold~
+is set, entries scoring at or above the threshold are tagged (by
+default with ~elfeed-ai~), which you can use in elfeed's standard
+search filter syntax to view only curated content.
 
 =elfeed-ai= integrates with elfeed through three mechanisms:
 
@@ -74,9 +74,14 @@ Emacs 29.1 or later.
 (elfeed-ai-mode 1)
 #+end_src
 
-New entries are scored automatically when elfeed fetches them.  Use
-=+elfeed-ai= in your elfeed search filter to see only curated
-content:
+New entries are scored automatically when elfeed fetches them.  Scores
+are stored as entry metadata, so you can sort the search buffer by
+relevance.
+
+To also filter by relevance, set ~elfeed-ai-relevance-threshold~ to a
+value between 0.0 and 1.0 (e.g., ~0.5~).  Entries scoring at or above
+the threshold are tagged with ~elfeed-ai-score-tag~ (default
+~elfeed-ai~), which you can use in elfeed search filters:
 
 #+begin_example
 +elfeed-ai +unread
@@ -152,9 +157,11 @@ the user's interests"~ to get more targeted summaries.  The type is
 
 The user option ~elfeed-ai-relevance-threshold~ sets the minimum AI
 score (a float between 0.0 and 1.0) for an entry to receive the
-~elfeed-ai-score-tag~ tag.  Entries scoring below this threshold are
-not tagged, though they still retain their score in ~elfeed-meta~.
-The default value is ~0.5~.
+~elfeed-ai-score-tag~ tag.  When ~nil~ (the default), no tags are
+added and entries are scored only---you can still sort by score and
+view summaries.  When set to a number, entries scoring at or above the
+threshold are tagged, and entries scoring below it are not tagged.  In
+both cases, the score is stored in ~elfeed-meta~.
 
 The user option ~elfeed-ai-score-unscored-days~ specifies the default
 number of days to look back when invoking ~elfeed-ai-score-unscored~
@@ -215,9 +222,10 @@ persist daily usage data across Emacs sessions.  The default is
 #+vindex: elfeed-ai-score-tag
 The user option ~elfeed-ai-score-tag~ is the tag added to entries whose
 AI score meets or exceeds ~elfeed-ai-relevance-threshold~
-([[#h:scoring-behavior][Scoring behavior]]).  The default is ~elfeed-ai~.  You can change
-this to any symbol, then use it in elfeed search filters (e.g.,
-=+my-custom-tag +unread=).
+([[#h:scoring-behavior][Scoring behavior]]).  This tag is only used when
+~elfeed-ai-relevance-threshold~ is non-nil.  The default is
+~elfeed-ai~.  You can change this to any symbol, then use it in elfeed
+search filters (e.g., =+my-custom-tag +unread=).
 
 ** AI backend and model
 :PROPERTIES:
@@ -393,9 +401,9 @@ scoring requests reuse the cached system prompt.
 
 On receiving a response, the function parses the JSON, records token
 and cost usage ([[#h:budget][Budget]]), stores the score and summary as
-~elfeed-meta~ properties on the entry, and applies or removes the
-relevance tag based on ~elfeed-ai-relevance-threshold~
-([[#h:scoring-behavior][Scoring behavior]]).
+~elfeed-meta~ properties on the entry, and, if
+~elfeed-ai-relevance-threshold~ is non-nil, applies or removes the
+relevance tag ([[#h:scoring-behavior][Scoring behavior]]).
 
 #+findex: elfeed-ai-budget-exhausted-p
 The function ~elfeed-ai-budget-exhausted-p~ returns non-nil if today's

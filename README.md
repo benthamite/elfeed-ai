@@ -1,8 +1,8 @@
 # `elfeed-ai`: AI-powered content curation for elfeed
 
-`elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader. Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, tagging the ones that matter and, optionally, showing you a quick AI-generated summary before you read the full article.
+`elfeed-ai` brings AI-powered relevance scoring to [elfeed](https://github.com/skeeto/elfeed), the Emacs feed reader. Describe your interests in natural language, and `elfeed-ai` evaluates every new entry against that profile, scoring them for relevance and optionally showing you a quick AI-generated summary before you read the full article.
 
-Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Entries scoring above a configurable threshold are tagged `elfeed-ai` (or any tag you choose), so you can filter your elfeed search to `+elfeed-ai +unread` and see only curated content.
+Instead of scanning hundreds of entries manually, you write a short interest profile once—or point to a file containing a detailed one—and let a language model do the triage. Scores are stored as entry metadata, so you can sort by relevance. Optionally, set `elfeed-ai-relevance-threshold` to tag entries above a cutoff (e.g., `+elfeed-ai +unread`).
 
 Key capabilities:
 
@@ -47,7 +47,7 @@ Requires Emacs 29.1 or later, plus [elfeed](https://github.com/skeeto/elfeed) (3
 (elfeed-ai-mode 1)
 ```
 
-Run `M-x elfeed-update` as usual. New entries are scored automatically, and those meeting the relevance threshold are tagged `elfeed-ai`. Filter your search buffer with `+elfeed-ai +unread` to see curated content.
+Run `M-x elfeed-update` as usual. New entries are scored automatically. Scores appear in the search buffer and you can sort by relevance. To also filter by tag, set `elfeed-ai-relevance-threshold` (e.g., `0.5`), and entries above that score will be tagged `elfeed-ai`—then filter with `+elfeed-ai +unread`.
 
 To score entries that arrived before you enabled the mode, use `M-x elfeed-ai-score-unscored`. `elfeed-ai` will then score all and only the entries published in a number of past days equal to `elfeed-ai-score-unscored-days` (set to `7` by default).
 
@@ -56,3 +56,9 @@ You can explore other relevant commands and user options with `M-x elfeed-ai-men
 ## Documentation
 
 For a comprehensive description of all user options, commands, and functions, see the [manual](README.org).
+
+## FAQ
+
+**Q: How expensive is this?**
+
+A: The cost depends on how many feeds you have and what model you use. With `'gemini-flash-lite-latest` (as of early March 2026), the cost per 100 entries was less than $0.10. You can see historical costs in the ‘Budget’ section of `elfeed-ai-menu`, and set daily limits with `elfeed-ai-daily-budget` (defaults to $1).
