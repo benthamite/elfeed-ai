@@ -39,9 +39,9 @@
 ;;
 ;;   (elfeed-ai-mode 1)
 ;;
-;; New entries are automatically scored when fetched.  Entries scoring
-;; above `elfeed-ai-relevance-threshold' are tagged `elfeed-ai'.
-;; Use "+elfeed-ai" in your elfeed search filter to see curated content.
+;; New entries are automatically scored when fetched.  If
+;; `elfeed-ai-relevance-threshold' is set, entries above the threshold
+;; are tagged with `elfeed-ai-score-tag' for easy filtering.
 
 ;;; Code:
 
@@ -72,9 +72,12 @@ every AI scoring prompt.  When empty, scoring is skipped."
                  (file :tag "File containing profile"))
   :group 'elfeed-ai)
 
-(defcustom elfeed-ai-relevance-threshold 0.5
-  "Minimum AI score (0.0-1.0) for tagging an entry as relevant."
-  :type 'float
+(defcustom elfeed-ai-relevance-threshold nil
+  "Minimum AI score (0.0-1.0) for tagging an entry as relevant.
+When non-nil, entries scoring at or above this value are tagged with
+`elfeed-ai-score-tag'.  When nil (the default), no tags are added."
+  :type '(choice (const :tag "Disabled" nil)
+                 (float :tag "Threshold"))
   :group 'elfeed-ai)
 
 (defcustom elfeed-ai-daily-budget '(dollars . 1.00)
@@ -477,9 +480,10 @@ or nil."
   (when cost
     (setf (elfeed-meta entry :ai-cost) cost)
     (setq elfeed-ai--last-100-cost-cache 'unset))
-  (if (>= (car result) elfeed-ai-relevance-threshold)
-      (elfeed-tag entry elfeed-ai-score-tag)
-    (elfeed-untag entry elfeed-ai-score-tag)))
+  (when elfeed-ai-relevance-threshold
+    (if (>= (car result) elfeed-ai-relevance-threshold)
+        (elfeed-tag entry elfeed-ai-score-tag)
+      (elfeed-untag entry elfeed-ai-score-tag))))
 
 (defun elfeed-ai-score-entry (entry callback)
   "Score ENTRY asynchronously using gptel.
@@ -739,9 +743,9 @@ Idempotent: removes any existing summary before inserting."
 (define-minor-mode elfeed-ai-mode
   "Global minor mode for AI-powered content curation in elfeed.
 When enabled, new elfeed entries are automatically scored for
-relevance against `elfeed-ai-interest-profile'.  Entries scoring
-above `elfeed-ai-relevance-threshold' are tagged with
-`elfeed-ai-score-tag' (default `elfeed-ai').
+relevance against `elfeed-ai-interest-profile'.  If
+`elfeed-ai-relevance-threshold' is set, entries scoring above it
+are tagged with `elfeed-ai-score-tag' for filtering.
 
 The search buffer displays an AI score column, and the show
 buffer displays AI-generated summaries above the original content."
@@ -901,7 +905,10 @@ argument, prompt for the number of days."
   :variable 'elfeed-ai-relevance-threshold
   :description "Relevance threshold"
   :reader (lambda (prompt _initial-input _history)
-            (read-number prompt elfeed-ai-relevance-threshold)))
+            (let ((val (read-string prompt
+                                    (when elfeed-ai-relevance-threshold
+                                      (number-to-string elfeed-ai-relevance-threshold)))))
+              (if (string-empty-p val) nil (string-to-number val)))))
 
 (transient-define-infix elfeed-ai--set-max-content-length ()
   :class 'transient-lisp-variable
