@@ -153,6 +153,14 @@ reduces token usage per entry."
   :type 'boolean
   :group 'elfeed-ai)
 
+(defcustom elfeed-ai-summary-prompt "a 1-3 sentence summary of the content"
+  "Instruction appended to the scoring prompt for summary generation.
+Only used when `elfeed-ai-generate-summary' is non-nil.  The text
+is inserted after the request for a \"summary\" JSON key, so it
+should describe what the summary should contain."
+  :type 'string
+  :group 'elfeed-ai)
+
 (defcustom elfeed-ai-sort-by-score t
   "When non-nil, sort the search buffer by AI score (highest first).
 Unscored entries are sorted after scored ones.  Entries with equal
@@ -410,10 +418,10 @@ Example response:
 %s"
    (elfeed-ai--resolve-profile)
    (if elfeed-ai-generate-summary
-       " with \
+       (format " with \
 exactly two keys:
 - \"score\": a float between 0.0 and 1.0
-- \"summary\": a 1-3 sentence summary of the content"
+- \"summary\": %s" elfeed-ai-summary-prompt)
      " with \
 exactly one key:
 - \"score\": a float between 0.0 and 1.0")
