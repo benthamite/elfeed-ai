@@ -671,30 +671,46 @@ restored."
 
 ;;;; Display — show buffer
 
+(defun elfeed-ai--show-remove-summary ()
+  "Remove any previously injected AI summary from the show buffer."
+  (let ((inhibit-read-only t))
+    (save-excursion
+      (goto-char (point-min))
+      (let ((start (text-property-any (point-min) (point-max)
+                                      'elfeed-ai-summary t)))
+        (when start
+          (delete-region start
+                         (or (next-single-property-change
+                              start 'elfeed-ai-summary)
+                             (point-max))))))))
+
 (defun elfeed-ai--show-inject-summary (&rest _)
-  "Inject AI summary at the top of the elfeed show buffer."
+  "Inject AI summary at the top of the elfeed show buffer.
+Idempotent: removes any existing summary before inserting."
   (when-let* ((entry elfeed-show-entry)
               (summary (elfeed-meta entry :ai-summary))
               ((not (string-empty-p summary))))
     (let ((inhibit-read-only t)
           (score (elfeed-meta entry :ai-score))
           (cost (elfeed-meta entry :ai-cost)))
+      (elfeed-ai--show-remove-summary)
       (save-excursion
         (goto-char (point-min))
         ;; Find the blank line separating header from content.
         (when (re-search-forward "^$" nil t)
           (forward-line 1)
-          (insert
-           (propertize "AI Summary" 'face 'elfeed-ai-summary-heading-face)
-           (if score (format " (%.2f)" score) "")
-           (if cost (format " [$%.4f]" cost) "")
-           "\n\n"
-           summary
-           "\n\n"
-           ;; Width roughly matches a typical body column.
-           (propertize (make-string 60 ?─) 'face 'shadow)
-
-           "\n\n"))))))
+          (let ((start (point)))
+            (insert
+             (propertize "AI Summary" 'face 'elfeed-ai-summary-heading-face)
+             (if score (format " (%.2f)" score) "")
+             (if cost (format " [$%.4f]" cost) "")
+             "\n\n"
+             summary
+             "\n\n"
+             ;; Width roughly matches a typical body column.
+             (propertize (make-string 60 ?─) 'face 'shadow)
+             "\n\n")
+            (put-text-property start (point) 'elfeed-ai-summary t)))))))
 
 ;;;; Minor mode
 
@@ -732,6 +748,12 @@ buffer displays AI-generated summaries above the original content."
     (elfeed-log 'warn
                 "elfeed-ai: dollar budget requires gptel-plus; budget will not be enforced"))
   (advice-add 'elfeed-show-refresh :after #'elfeed-ai--show-inject-summary)
+  ;; Re-inject after elfeed-tube modifies the show buffer directly.
+  (if (fboundp 'elfeed-tube-show)
+      (advice-add 'elfeed-tube-show :after #'elfeed-ai--show-inject-summary)
+    (with-eval-after-load 'elfeed-tube
+      (when elfeed-ai-mode
+        (advice-add 'elfeed-tube-show :after #'elfeed-ai--show-inject-summary))))
   (elfeed-ai--refresh-search))
 
 (defun elfeed-ai--disable ()
@@ -747,6 +769,8 @@ buffer displays AI-generated summaries above the original content."
         elfeed-ai--scoring-in-progress nil)
   (remove-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue)
   (advice-remove 'elfeed-show-refresh #'elfeed-ai--show-inject-summary)
+  (when (fboundp 'elfeed-tube-show)
+    (advice-remove 'elfeed-tube-show #'elfeed-ai--show-inject-summary))
   (elfeed-ai--refresh-search))
 
 ;;;; Interactive commands
