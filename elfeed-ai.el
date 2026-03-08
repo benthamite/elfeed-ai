@@ -251,6 +251,8 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
 (defvar elfeed-ai--budget-cache nil
   "Cached budget data: alist with `date', `tokens-used', and `dollars-used' keys.")
 
+(defvar elfeed-ai-mode)                  ; defined below by `define-minor-mode'
+
 (defvar elfeed-ai--original-print-entry-function nil
   "Original value of `elfeed-search-print-entry-function'.")
 
@@ -578,45 +580,50 @@ CALLBACK is called with (score . summary) on success, or nil."
 ;;;; Display — search buffer
 
 (defun elfeed-ai-search-print-entry (entry)
-  "Print ENTRY to the elfeed search buffer with an AI score column."
-  (let* ((date (elfeed-search-format-date (elfeed-entry-date entry)))
-         (title (or (elfeed-meta entry :title)
-                    (elfeed-entry-title entry) ""))
-         (title-faces (elfeed-search--faces (elfeed-entry-tags entry)))
-         (feed (elfeed-entry-feed entry))
-         (feed-title (when feed
-                       (or (elfeed-meta feed :title)
-                           (elfeed-feed-title feed))))
-         (tags (mapcar #'symbol-name (elfeed-entry-tags entry)))
-         (tags-str (mapconcat
-                    (lambda (s) (propertize s 'face 'elfeed-search-tag-face))
-                    tags ","))
-         (score (elfeed-meta entry :ai-score))
-         (score-str (if score (format "%4.2f" score) "  - "))
-         (score-face (cond
-                      ((null score) 'elfeed-ai-score-face)
-                      ((>= score elfeed-ai-score-high-threshold)
-                       'elfeed-ai-score-high-face)
-                      ((<= score elfeed-ai-score-low-threshold)
-                       'elfeed-ai-score-low-face)
-                      (t 'elfeed-ai-score-face)))
-         (score-width 6) ; 4 chars ("0.85" or "  - ") + 2 for spacing
-         ;; 10 accounts for the date column, matching elfeed's default.
-         (title-width (- (window-width) 10 score-width
-                         elfeed-search-trailing-width))
-         (title-column (elfeed-format-column
-                        title (elfeed-clamp
-                               elfeed-search-title-min-width
-                               title-width
-                               elfeed-search-title-max-width)
-                        :left)))
-    (insert (propertize date 'face 'elfeed-search-date-face) " ")
-    (insert (propertize score-str 'face score-face) " ")
-    (insert (propertize title-column 'face title-faces 'kbd-help title) " ")
-    (when feed-title
-      (insert (propertize feed-title 'face 'elfeed-search-feed-face) " "))
-    (when tags
-      (insert "(" tags-str ")"))))
+  "Print ENTRY to the elfeed search buffer with an AI score column.
+When `elfeed-ai-mode' is off, delegate to the original print function."
+  (if (not elfeed-ai-mode)
+      (funcall (or elfeed-ai--original-print-entry-function
+                   #'elfeed-search-print-entry--default)
+               entry)
+    (let* ((date (elfeed-search-format-date (elfeed-entry-date entry)))
+           (title (or (elfeed-meta entry :title)
+                      (elfeed-entry-title entry) ""))
+           (title-faces (elfeed-search--faces (elfeed-entry-tags entry)))
+           (feed (elfeed-entry-feed entry))
+           (feed-title (when feed
+                         (or (elfeed-meta feed :title)
+                             (elfeed-feed-title feed))))
+           (tags (mapcar #'symbol-name (elfeed-entry-tags entry)))
+           (tags-str (mapconcat
+                      (lambda (s) (propertize s 'face 'elfeed-search-tag-face))
+                      tags ","))
+           (score (elfeed-meta entry :ai-score))
+           (score-str (if score (format "%4.2f" score) "  - "))
+           (score-face (cond
+                        ((null score) 'elfeed-ai-score-face)
+                        ((>= score elfeed-ai-score-high-threshold)
+                         'elfeed-ai-score-high-face)
+                        ((<= score elfeed-ai-score-low-threshold)
+                         'elfeed-ai-score-low-face)
+                        (t 'elfeed-ai-score-face)))
+           (score-width 6) ; 4 chars ("0.85" or "  - ") + 2 for spacing
+           ;; 10 accounts for the date column, matching elfeed's default.
+           (title-width (- (window-width) 10 score-width
+                           elfeed-search-trailing-width))
+           (title-column (elfeed-format-column
+                          title (elfeed-clamp
+                                 elfeed-search-title-min-width
+                                 title-width
+                                 elfeed-search-title-max-width)
+                          :left)))
+      (insert (propertize date 'face 'elfeed-search-date-face) " ")
+      (insert (propertize score-str 'face score-face) " ")
+      (insert (propertize title-column 'face title-faces 'kbd-help title) " ")
+      (when feed-title
+        (insert (propertize feed-title 'face 'elfeed-search-feed-face) " "))
+      (when tags
+        (insert "(" tags-str ")")))))
 
 ;;;; Sorting
 
@@ -809,9 +816,13 @@ argument, prompt for the number of days."
 
 ;;;; Transient menu
 
-(defun elfeed-ai--mode-description ()
-  "Return a description for the mode toggle showing current state."
-  (format "Mode (%s)" (if elfeed-ai-mode "on" "off")))
+(transient-define-infix elfeed-ai--set-mode ()
+  :class 'transient-lisp-variable
+  :variable 'elfeed-ai-mode
+  :description "Mode"
+  :reader (lambda (&rest _)
+            (elfeed-ai-mode (if elfeed-ai-mode -1 1))
+            elfeed-ai-mode))
 
 (transient-define-infix elfeed-ai--set-auto-score ()
   :class 'transient-lisp-variable
@@ -933,9 +944,7 @@ Returns nil if no entries have cost data."
     ("S" "Score unscored entries" elfeed-ai-score-unscored)]
    ["Display"
     ("t" "Toggle sort by score" elfeed-ai-toggle-sort :transient t)
-    ("m" "Toggle mode" elfeed-ai-mode
-     :transient t
-     :description elfeed-ai--mode-description)]
+    ("m" elfeed-ai--set-mode)]
    ["Scoring"
     ("-m" elfeed-ai--set-model)
     ("-a" elfeed-ai--set-auto-score)
