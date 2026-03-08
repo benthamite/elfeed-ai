@@ -102,9 +102,9 @@
           (elfeed-ai--ensure-budget)
           (should (= (elfeed-ai--budget-remaining) 1000))
           (should-not (elfeed-ai-budget-exhausted-p))
-          (elfeed-ai--record-usage 600)
+          (elfeed-ai--record-usage 600 nil)
           (should (= (elfeed-ai--budget-remaining) 400))
-          (elfeed-ai--record-usage 400)
+          (elfeed-ai--record-usage 400 nil)
           (should (= (elfeed-ai--budget-remaining) 0))
           (should (elfeed-ai-budget-exhausted-p)))
       (setq elfeed-ai--budget-cache nil)
@@ -119,11 +119,11 @@
         (progn
           (setq elfeed-ai--budget-cache nil)
           (elfeed-ai--ensure-budget)
-          (elfeed-ai--record-usage 1234)
+          (elfeed-ai--record-usage 1234 nil)
           ;; Clear cache and reload from file.
           (setq elfeed-ai--budget-cache nil)
           (elfeed-ai--ensure-budget)
-          (should (= (alist-get 'used elfeed-ai--budget-cache) 1234)))
+          (should (= (alist-get 'tokens-used elfeed-ai--budget-cache) 1234)))
       (setq elfeed-ai--budget-cache nil)
       (delete-file elfeed-ai-budget-file))))
 
