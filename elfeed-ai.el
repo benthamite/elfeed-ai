@@ -838,9 +838,9 @@ argument, prompt for the number of days."
   :variable 'elfeed-ai-daily-budget
   :description "Budget type"
   :reader (lambda (&rest _)
-            (let ((new-type (if (eq (elfeed-ai--budget-type) 'tokens)
-                                'dollars 'tokens)))
-              (cons new-type (elfeed-ai--budget-limit)))))
+            (if (eq (elfeed-ai--budget-type) 'tokens)
+                '(dollars . 1.00)
+              '(tokens . 100000))))
 
 (defclass elfeed-ai--budget-limit-variable (transient-lisp-variable) ()
   "Transient variable that displays only the budget limit.")
@@ -886,8 +886,9 @@ Returns nil if no entries have cost data."
 
 (defun elfeed-ai--budget-heading ()
   "Return the Budget group heading with last-100 cost info."
-  (let ((cost-str (elfeed-ai--format-last-100-cost)))
-    (format "Budget  (%s)" cost-str)))
+  (if (eq (elfeed-ai--budget-type) 'dollars)
+      (format "Budget  (%s)" (elfeed-ai--format-last-100-cost))
+    "Budget"))
 
 ;;;###autoload
 (transient-define-prefix elfeed-ai-menu ()
