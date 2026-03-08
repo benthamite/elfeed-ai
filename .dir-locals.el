@@ -2,5 +2,6 @@
                                 (lambda ()
                                   (require 'ox-texinfo)
                                   (let ((inhibit-message t))
-                                    (org-texinfo-export-to-texinfo)))
+                                    (org-texinfo-export-to-texinfo)
+                                    (org-texinfo-export-to-info)))
                                 nil t)))))
