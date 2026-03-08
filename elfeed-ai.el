@@ -705,52 +705,44 @@ buffer displays AI-generated summaries above the original content."
 ;;;; Interactive commands
 
 ;;;###autoload
-(defun elfeed-ai-score-entry-at-point (&optional force)
-  "Score the elfeed entry at point.
-With prefix argument FORCE, re-score even if already scored."
+(defun elfeed-ai-score (&optional force)
+  "Score elfeed entries.
+In the show buffer, score the displayed entry.  In the search
+buffer, score all selected entries (or the entry at point when no
+region is active).  With prefix argument FORCE, re-score already
+scored entries."
   (interactive "P")
-  (let ((entry (cond
-                ((derived-mode-p 'elfeed-search-mode)
-                 (car (elfeed-search-selected)))
-                ((derived-mode-p 'elfeed-show-mode)
-                 elfeed-show-entry)
-                (t (user-error "Not in an elfeed buffer")))))
-    (unless entry (user-error "No entry at point"))
-    (when (and (not force) (elfeed-tagged-p elfeed-ai-scored-tag entry))
-      (user-error "Entry already scored (%.2f); use C-u to re-score"
-                  (or (elfeed-meta entry :ai-score) 0)))
-    (message "elfeed-ai: scoring...")
-    (elfeed-ai-score-entry
-     entry
-     (lambda (result)
-       (when result
-         (let ((cost (elfeed-meta entry :ai-cost)))
-           (if cost
-               (message "elfeed-ai: score %.2f (cost $%.4f)" (car result) cost)
-             (message "elfeed-ai: score %.2f" (car result))))
-         (elfeed-ai--refresh-search)
-         (when (derived-mode-p 'elfeed-show-mode)
-           (elfeed-show-refresh)))))))
-
-;;;###autoload
-(defun elfeed-ai-score-selected (&optional force)
-  "Queue all selected entries in the search buffer for scoring.
-With prefix argument FORCE, re-score already scored entries."
-  (interactive "P")
-  (unless (derived-mode-p 'elfeed-search-mode)
-    (user-error "Not in elfeed search buffer"))
-  (let* ((entries (elfeed-search-selected))
-         (to-score (if force
-                       entries
-                     (cl-remove-if
-                      (lambda (e) (elfeed-tagged-p elfeed-ai-scored-tag e))
-                      entries))))
-    (dolist (entry to-score)
-      (when force
-        (elfeed-untag entry elfeed-ai-scored-tag))
-      (elfeed-ai--enqueue entry))
-    (message "elfeed-ai: queued %d entries for scoring (%d already scored)"
-             (length to-score) (- (length entries) (length to-score)))))
+  (cond
+   ((derived-mode-p 'elfeed-show-mode)
+    (let ((entry elfeed-show-entry))
+      (unless entry (user-error "No entry"))
+      (when (and (not force) (elfeed-tagged-p elfeed-ai-scored-tag entry))
+        (user-error "Entry already scored (%.2f); use C-u to re-score"
+                    (or (elfeed-meta entry :ai-score) 0)))
+      (message "elfeed-ai: scoring...")
+      (elfeed-ai-score-entry
+       entry
+       (lambda (result)
+         (when result
+           (let ((cost (elfeed-meta entry :ai-cost)))
+             (if cost
+                 (message "elfeed-ai: score %.2f (cost $%.4f)" (car result) cost)
+               (message "elfeed-ai: score %.2f" (car result))))
+           (elfeed-show-refresh))))))
+   ((derived-mode-p 'elfeed-search-mode)
+    (let* ((entries (elfeed-search-selected))
+           (to-score (if force
+                         entries
+                       (cl-remove-if
+                        (lambda (e) (elfeed-tagged-p elfeed-ai-scored-tag e))
+                        entries))))
+      (dolist (entry to-score)
+        (when force
+          (elfeed-untag entry elfeed-ai-scored-tag))
+        (elfeed-ai--enqueue entry))
+      (message "elfeed-ai: queued %d entries for scoring (%d already scored)"
+               (length to-score) (- (length entries) (length to-score)))))
+   (t (user-error "Not in an elfeed buffer"))))
 
 ;;;###autoload
 (defun elfeed-ai-score-unscored (&optional days)
@@ -877,8 +869,7 @@ argument, prompt for the number of days."
 (transient-define-prefix elfeed-ai-menu ()
   "Transient menu for elfeed-ai."
   [["Score"
-    ("s" "Score entry at point" elfeed-ai-score-entry-at-point)
-    ("S" "Score selected entries" elfeed-ai-score-selected)
+    ("s" "Score entry/selection" elfeed-ai-score)
     ("u" "Score unscored entries" elfeed-ai-score-unscored)]
    ["Display"
     ("t" "Toggle sort by score" elfeed-ai-toggle-sort)
