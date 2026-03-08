@@ -711,7 +711,8 @@ buffer displays AI-generated summaries above the original content."
              (not (require 'gptel-plus nil t)))
     (elfeed-log 'warn
                 "elfeed-ai: dollar budget requires gptel-plus; budget will not be enforced"))
-  (advice-add 'elfeed-show-refresh :after #'elfeed-ai--show-inject-summary))
+  (advice-add 'elfeed-show-refresh :after #'elfeed-ai--show-inject-summary)
+  (elfeed-ai--refresh-search))
 
 (defun elfeed-ai--disable ()
   "Disable elfeed-ai integrations."
@@ -725,7 +726,8 @@ buffer displays AI-generated summaries above the original content."
   (setq elfeed-ai--pending-queue nil
         elfeed-ai--scoring-in-progress nil)
   (remove-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue)
-  (advice-remove 'elfeed-show-refresh #'elfeed-ai--show-inject-summary))
+  (advice-remove 'elfeed-show-refresh #'elfeed-ai--show-inject-summary)
+  (elfeed-ai--refresh-search))
 
 ;;;; Interactive commands
 
@@ -806,6 +808,10 @@ argument, prompt for the number of days."
                 used limit remaining)))))
 
 ;;;; Transient menu
+
+(defun elfeed-ai--mode-description ()
+  "Return a description for the mode toggle showing current state."
+  (format "Mode (%s)" (if elfeed-ai-mode "on" "off")))
 
 (transient-define-infix elfeed-ai--set-auto-score ()
   :class 'transient-lisp-variable
@@ -927,7 +933,9 @@ Returns nil if no entries have cost data."
     ("S" "Score unscored entries" elfeed-ai-score-unscored)]
    ["Display"
     ("t" "Toggle sort by score" elfeed-ai-toggle-sort :transient t)
-    ("m" "Toggle mode" elfeed-ai-mode :transient t)]
+    ("m" "Toggle mode" elfeed-ai-mode
+     :transient t
+     :description elfeed-ai--mode-description)]
    ["Scoring"
     ("-m" elfeed-ai--set-model)
     ("-a" elfeed-ai--set-auto-score)
