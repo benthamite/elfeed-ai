@@ -1031,6 +1031,7 @@ Returns nil if no entries have cost data."
 ;;;###autoload
 (transient-define-prefix elfeed-ai-menu ()
   "Transient menu for elfeed-ai."
+  :info-manual "(elfeed-ai)"
   [["Score"
     ("s" "Score entry/selection" elfeed-ai-score)
     ("S" "Score unscored entries" elfeed-ai-score-unscored)]
