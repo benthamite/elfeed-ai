@@ -255,6 +255,9 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
 (defvar elfeed-ai--batch-cost 0.0
   "Accumulated cost for the current batch.")
 
+(defvar elfeed-ai--batch-fail-count 0
+  "Number of entries that failed scoring in the current batch.")
+
 (defvar elfeed-ai--budget-cache nil
   "Cached budget data: alist with `date', `tokens-used', and `dollars-used' keys.")
 
@@ -490,14 +493,15 @@ or nil."
 CALLBACK is called with (score . summary) on success, or nil."
   (cond
    ((string-empty-p (elfeed-ai--resolve-profile))
-    (elfeed-log 'warn "elfeed-ai: interest profile is empty")
+    (elfeed-log 'warn "elfeed-ai: interest profile is empty; cannot score")
     (funcall callback nil))
    ((elfeed-ai-budget-exhausted-p)
-    (elfeed-log 'warn "elfeed-ai: daily token budget exhausted")
+    (elfeed-log 'warn "elfeed-ai: daily token budget exhausted; cannot score \"%s\""
+                (or (elfeed-entry-title entry) "(no title)"))
     (funcall callback nil))
    ((and (null (elfeed-ai--entry-content entry))
          (null (elfeed-entry-title entry)))
-    (elfeed-log 'debug "elfeed-ai: entry has no title or content")
+    (elfeed-log 'warn "elfeed-ai: entry has no title or content, skipping")
     (funcall callback nil))
    (t
     (let* ((prompt (elfeed-ai--build-prompt entry))
@@ -518,7 +522,8 @@ CALLBACK is called with (score . summary) on success, or nil."
         :callback (lambda (response info)
                     (if (not response)
                         (progn
-                          (elfeed-log 'error "elfeed-ai: gptel request failed: %S" info)
+                          (elfeed-log 'error "elfeed-ai: gptel request failed for \"%s\": %S"
+                                      (or (elfeed-entry-title entry) "(no title)") info)
                           (funcall callback nil))
                       (let* ((result (elfeed-ai--parse-response response))
                              (cost (and (require 'gptel-plus nil t)
@@ -549,19 +554,35 @@ CALLBACK is called with (score . summary) on success, or nil."
           (elfeed-ai-budget-exhausted-p))
       (progn
         (setq elfeed-ai--scoring-in-progress nil)
-        (cond
-         ((and elfeed-ai--pending-queue
-               (elfeed-ai-budget-exhausted-p))
-          (elfeed-log 'warn "elfeed-ai: budget exhausted, %d entries pending"
-                      (length elfeed-ai--pending-queue)))
-         ((> elfeed-ai--batch-count 0)
-          (if (> elfeed-ai--batch-cost 0)
-              (message "elfeed-ai: scored %d entries (total cost $%.4f)"
-                       elfeed-ai--batch-count elfeed-ai--batch-cost)
-            (message "elfeed-ai: scored %d entries"
-                     elfeed-ai--batch-count))))
+        (let ((scored elfeed-ai--batch-count)
+              (failed elfeed-ai--batch-fail-count)
+              (cost elfeed-ai--batch-cost)
+              (pending (length elfeed-ai--pending-queue)))
+          (cond
+           ((and elfeed-ai--pending-queue
+                 (elfeed-ai-budget-exhausted-p))
+            (elfeed-log 'warn "elfeed-ai: budget exhausted, %d entries pending"
+                        pending)
+            (message "elfeed-ai: budget exhausted, %d entries pending (check *elfeed-log*)"
+                     pending))
+           ((and (= scored 0) (> failed 0))
+            (elfeed-log 'warn "elfeed-ai: all %d entries failed to score" failed)
+            (message "elfeed-ai: all %d entries failed to score (check *elfeed-log*)"
+                     failed))
+           ((> failed 0)
+            (if (> cost 0)
+                (message "elfeed-ai: scored %d entries, %d failed (cost $%.4f; check *elfeed-log*)"
+                         scored failed cost)
+              (message "elfeed-ai: scored %d entries, %d failed (check *elfeed-log*)"
+                       scored failed)))
+           ((> scored 0)
+            (if (> cost 0)
+                (message "elfeed-ai: scored %d entries (total cost $%.4f)"
+                         scored cost)
+              (message "elfeed-ai: scored %d entries" scored)))))
         (setq elfeed-ai--batch-count 0
-              elfeed-ai--batch-cost 0.0)
+              elfeed-ai--batch-cost 0.0
+              elfeed-ai--batch-fail-count 0)
         ;; Refresh search buffer to show updated scores.
         (elfeed-ai--refresh-search))
     (setq elfeed-ai--scoring-in-progress t)
@@ -569,10 +590,12 @@ CALLBACK is called with (score . summary) on success, or nil."
       (elfeed-ai-score-entry
        entry
        (lambda (result)
-         (when result
-           (cl-incf elfeed-ai--batch-count)
-           (when-let ((cost (elfeed-meta entry :ai-cost)))
-             (cl-incf elfeed-ai--batch-cost cost)))
+         (if result
+             (progn
+               (cl-incf elfeed-ai--batch-count)
+               (when-let ((cost (elfeed-meta entry :ai-cost)))
+                 (cl-incf elfeed-ai--batch-cost cost)))
+           (cl-incf elfeed-ai--batch-fail-count))
          ;; Defer to avoid deep recursion when callbacks fire synchronously
          ;; (e.g. empty profile, no content).
          (run-at-time 0 nil #'elfeed-ai--process-queue))))))
@@ -821,12 +844,14 @@ scored entries."
       (elfeed-ai-score-entry
        entry
        (lambda (result)
-         (when result
-           (let ((cost (elfeed-meta entry :ai-cost)))
-             (if cost
-                 (message "elfeed-ai: score %.2f (cost $%.4f)" (car result) cost)
-               (message "elfeed-ai: score %.2f" (car result))))
-           (elfeed-show-refresh))))))
+         (if result
+             (progn
+               (let ((cost (elfeed-meta entry :ai-cost)))
+                 (if cost
+                     (message "elfeed-ai: score %.2f (cost $%.4f)" (car result) cost)
+                   (message "elfeed-ai: score %.2f" (car result))))
+               (elfeed-show-refresh))
+           (message "elfeed-ai: scoring failed (check *elfeed-log*)"))))))
    ((derived-mode-p 'elfeed-search-mode)
     (let* ((entries (elfeed-search-selected))
            (to-score (if force
