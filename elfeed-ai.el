@@ -790,9 +790,11 @@ correct buffer and inject there."
 
 (defun elfeed-ai--show-inject-summary (&rest _)
   "Inject AI summary at the top of the elfeed show buffer via overlay.
-Uses `before-string' on a zero-width overlay so the summary is immune
-to async buffer modifications by shr image loading and elfeed-tube.
-Idempotent: removes any existing summary before inserting."
+The overlay spans the blank-line separator between headers and content,
+using `after-string' so the summary text appears after the separator.
+Because the overlay is in the header area, `shr-image-fetched' (which
+calls `remove-overlays' on content-area image placeholders) cannot
+remove it.  Idempotent: removes any existing summary before inserting."
   (when-let* ((entry elfeed-show-entry)
               (summary (elfeed-meta entry :ai-summary))
               ((not (string-empty-p summary))))
@@ -802,9 +804,11 @@ Idempotent: removes any existing summary before inserting."
       (save-excursion
         (goto-char (point-min))
         ;; Find the blank line separating header from content.
+        ;; Anchor the overlay to this newline so it sits outside
+        ;; the content area where shr operates on images.
         (when (re-search-forward "^$" nil t)
-          (forward-line 1)
-          (let* ((pos (point))
+          (let* ((sep-pos (point))
+                 (sep-end (min (1+ sep-pos) (point-max)))
                  (text (concat
                         (propertize "AI Summary"
                                     'face 'elfeed-ai-summary-heading-face)
@@ -816,9 +820,9 @@ Idempotent: removes any existing summary before inserting."
                         ;; Width roughly matches a typical body column.
                         (propertize (make-string 60 ?─) 'face 'shadow)
                         "\n\n"))
-                 (ov (make-overlay pos pos)))
+                 (ov (make-overlay sep-pos sep-end)))
             (overlay-put ov 'elfeed-ai-summary t)
-            (overlay-put ov 'before-string text)))))))
+            (overlay-put ov 'after-string text)))))))
 
 (defun elfeed-ai--show-summary-overlay-p ()
   "Return non-nil if a summary overlay exists in the current buffer."
