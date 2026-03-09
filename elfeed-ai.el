@@ -824,23 +824,26 @@ Idempotent: removes any existing summary before inserting."
             (put-text-property start (point) 'elfeed-ai-summary t)))))))
 
 (defun elfeed-ai--after-show-entry (entry)
-  "Schedule a deferred AI summary injection for ENTRY.
-Runs after `elfeed-show-entry' and all its advice have completed,
-ensuring the summary survives any post-refresh buffer modifications."
+  "Schedule repeated AI summary injection checks for ENTRY.
+Async image loading (shr) and elfeed-tube data fetching can modify
+the show buffer after the initial rendering, removing the injected
+summary.  Multiple checks at staggered intervals ensure the
+summary is re-injected whenever it goes missing."
   (when elfeed-ai-mode
-    (run-at-time 0 nil
-      (lambda ()
-        (when-let ((buf (get-buffer (elfeed-show--buffer-name entry))))
-          (when (buffer-live-p buf)
-            (with-current-buffer buf
-              (when (and elfeed-show-entry
-                         (elfeed-meta elfeed-show-entry :ai-summary)
-                         (not (string-empty-p
-                               (elfeed-meta elfeed-show-entry :ai-summary)))
-                         (not (text-property-any
-                               (point-min) (point-max)
-                               'elfeed-ai-summary t)))
-                (elfeed-ai--show-inject-summary)))))))))
+    (dolist (delay '(0 0.5 1 2 5 10))
+      (run-at-time delay nil
+        (lambda ()
+          (when-let ((buf (get-buffer (elfeed-show--buffer-name entry))))
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (when (and (eq elfeed-show-entry entry)
+                           (elfeed-meta entry :ai-summary)
+                           (not (string-empty-p
+                                 (elfeed-meta entry :ai-summary)))
+                           (not (text-property-any
+                                 (point-min) (point-max)
+                                 'elfeed-ai-summary t)))
+                  (elfeed-ai--show-inject-summary))))))))))
 
 ;;;; Minor mode
 
