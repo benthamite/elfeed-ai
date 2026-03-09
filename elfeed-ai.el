@@ -167,6 +167,14 @@ scores are sorted by date."
   :type 'boolean
   :group 'elfeed-ai)
 
+(defcustom elfeed-ai-tube-score-delay 30
+  "Seconds to wait for elfeed-tube transcript before scoring YouTube entries.
+When a YouTube entry arrives via `elfeed-new-entry-hook', scoring
+is delayed by this many seconds to allow elfeed-tube to fetch the
+transcript.  Set to 0 to score immediately without waiting."
+  :type 'integer
+  :group 'elfeed-ai)
+
 (defcustom elfeed-ai-score-high-threshold 0.7
   "Minimum score for the high-score face in the search buffer.
 Scores at or above this value use `elfeed-ai-score-high-face'."
@@ -363,24 +371,65 @@ return yesterday's date."
 (defvar gptel-use-cache)
 (declare-function gptel-plus-compute-cost "gptel-plus")
 
+;; elfeed-tube integration (optional)
+(declare-function elfeed-tube--youtube-p "elfeed-tube-utils")
+(declare-function elfeed-tube--gethash "elfeed-tube")
+(declare-function elfeed-tube-item-caps "elfeed-tube")
+
 ;;;; Content extraction
 
+(defun elfeed-ai--tube-captions-text (entry)
+  "Return plain text of elfeed-tube captions for ENTRY, or nil.
+Checks both persisted metadata and the in-memory hash table."
+  (when-let* ((caps (or
+                     ;; Persisted captions (serialized in elfeed db).
+                     (when-let* ((caps-str
+                                  (elfeed-deref (elfeed-meta entry :caps))))
+                       (condition-case nil (read caps-str) (error nil)))
+                     ;; In-memory captions (ephemeral hash table).
+                     (and (fboundp 'elfeed-tube--gethash)
+                          (fboundp 'elfeed-tube-item-caps)
+                          (when-let ((item (elfeed-tube--gethash entry)))
+                            (elfeed-tube-item-caps item)))))
+              ((listp caps))
+              ((eq (car caps) 'transcript)))
+    (let ((text (mapconcat
+                 (lambda (segment)
+                   (if (and (listp segment) (>= (length segment) 3))
+                       (let ((s (nth 2 segment)))
+                         (if (stringp s) s ""))
+                     ""))
+                 (cddr caps) " ")))
+      (when (not (string-empty-p (string-trim text)))
+        (string-trim text)))))
+
 (defun elfeed-ai--entry-content (entry)
-  "Extract content from elfeed ENTRY as plain text."
-  (when-let* ((content-obj (elfeed-entry-content entry))
-              (text (elfeed-deref content-obj)))
-    (when (and (stringp text) (not (string-empty-p text)))
-      (with-temp-buffer
-        (insert text)
-        ;; Strip HTML tags.
-        (goto-char (point-min))
-        (while (re-search-forward "<[^>]*>" nil t)
-          (replace-match "" nil t))
-        ;; Collapse whitespace.
-        (goto-char (point-min))
-        (while (re-search-forward "[ \t\n]+" nil t)
-          (replace-match " "))
-        (string-trim (buffer-string))))))
+  "Extract content from elfeed ENTRY as plain text.
+Includes elfeed-tube transcript when available."
+  (let ((content
+         (when-let* ((content-obj (elfeed-entry-content entry))
+                     (text (elfeed-deref content-obj)))
+           (when (and (stringp text) (not (string-empty-p text)))
+             (with-temp-buffer
+               (insert text)
+               ;; Strip HTML tags.
+               (goto-char (point-min))
+               (while (re-search-forward "<[^>]*>" nil t)
+                 (replace-match "" nil t))
+               ;; Collapse whitespace.
+               (goto-char (point-min))
+               (while (re-search-forward "[ \t\n]+" nil t)
+                 (replace-match " "))
+               (string-trim (buffer-string))))))
+        (transcript (elfeed-ai--tube-captions-text entry)))
+    (cond
+     ;; Transcript first: for YouTube entries the transcript is
+     ;; typically more informative than the short description.
+     ((and content transcript)
+      (concat "Transcript:\n" transcript "\n\nDescription:\n" content))
+     (transcript
+      (concat "Transcript:\n" transcript))
+     (t content))))
 
 (defun elfeed-ai--entry-author (entry)
   "Extract author name from elfeed ENTRY."
@@ -548,6 +597,19 @@ CALLBACK is called with (score . summary) on success, or nil."
              (not elfeed-ai--scoring-in-progress))
     (elfeed-ai--process-queue)))
 
+(defun elfeed-ai--on-new-entry (entry)
+  "Handle a new elfeed ENTRY: enqueue for scoring.
+YouTube entries are delayed by `elfeed-ai-tube-score-delay' seconds
+to allow elfeed-tube to fetch the transcript first."
+  (if (and (> elfeed-ai-tube-score-delay 0)
+           (fboundp 'elfeed-tube--youtube-p)
+           (elfeed-tube--youtube-p entry))
+      (run-at-time elfeed-ai-tube-score-delay nil
+        (lambda ()
+          (when (and elfeed-ai-mode (elfeed-entry-p entry))
+            (elfeed-ai--enqueue entry))))
+    (elfeed-ai--enqueue entry)))
+
 (defun elfeed-ai--process-queue ()
   "Process the next entry in the scoring queue."
   (if (or (null elfeed-ai--pending-queue)
@@ -671,7 +733,7 @@ When `elfeed-ai-mode' is off, delegate to the original print function."
 ;;;; Sorting
 
 (defun elfeed-ai-sort (a b)
-  "Sort predicate for elfeed entries: highest AI score first.
+  "Sort predicate for elfeed entries A and B: highest AI score first.
 Unscored entries sort after scored ones.  Entries with equal
 scores are sorted by date (newest first)."
   ;; Use -1.0 as sentinel for unscored entries so they sort below any
@@ -716,6 +778,7 @@ restored."
 
 (defun elfeed-ai--after-elfeed-tube-show (&optional intended-entry)
   "Re-inject AI summary after elfeed-tube modifies the show buffer.
+INTENDED-ENTRY is the elfeed entry being displayed.
 `elfeed-tube-show' uses `with-current-buffer' internally, so when
 it returns the current buffer is not the show buffer.  Find the
 correct buffer and inject there."
@@ -760,6 +823,25 @@ Idempotent: removes any existing summary before inserting."
              "\n\n")
             (put-text-property start (point) 'elfeed-ai-summary t)))))))
 
+(defun elfeed-ai--after-show-entry (entry)
+  "Schedule a deferred AI summary injection for ENTRY.
+Runs after `elfeed-show-entry' and all its advice have completed,
+ensuring the summary survives any post-refresh buffer modifications."
+  (when elfeed-ai-mode
+    (run-at-time 0 nil
+      (lambda ()
+        (when-let ((buf (get-buffer (elfeed-show--buffer-name entry))))
+          (when (buffer-live-p buf)
+            (with-current-buffer buf
+              (when (and elfeed-show-entry
+                         (elfeed-meta elfeed-show-entry :ai-summary)
+                         (not (string-empty-p
+                               (elfeed-meta elfeed-show-entry :ai-summary)))
+                         (not (text-property-any
+                               (point-min) (point-max)
+                               'elfeed-ai-summary t)))
+                (elfeed-ai--show-inject-summary)))))))))
+
 ;;;; Minor mode
 
 ;;;###autoload
@@ -790,12 +872,15 @@ buffer displays AI-generated summaries above the original content."
       (setq elfeed-ai--original-sort-function elfeed-search-sort-function))
     (setq elfeed-search-sort-function #'elfeed-ai-sort))
   (when elfeed-ai-auto-score
-    (add-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue))
+    (add-hook 'elfeed-new-entry-hook #'elfeed-ai--on-new-entry))
   (when (and (eq (elfeed-ai--budget-type) 'dollars)
              (not (require 'gptel-plus nil t)))
     (elfeed-log 'warn
                 "elfeed-ai: dollar budget requires gptel-plus; budget will not be enforced"))
   (advice-add 'elfeed-show-refresh :after #'elfeed-ai--show-inject-summary)
+  ;; Deferred fallback: re-inject if something wipes the summary
+  ;; after elfeed-show-refresh and its advice have run.
+  (advice-add 'elfeed-show-entry :after #'elfeed-ai--after-show-entry)
   ;; Re-inject after elfeed-tube modifies the show buffer directly.
   ;; elfeed-tube-show uses with-current-buffer internally, so we need
   ;; a dedicated wrapper that finds the correct show buffer.
@@ -818,7 +903,9 @@ buffer displays AI-generated summaries above the original content."
   (setq elfeed-ai--pending-queue nil
         elfeed-ai--scoring-in-progress nil)
   (remove-hook 'elfeed-new-entry-hook #'elfeed-ai--enqueue)
+  (remove-hook 'elfeed-new-entry-hook #'elfeed-ai--on-new-entry)
   (advice-remove 'elfeed-show-refresh #'elfeed-ai--show-inject-summary)
+  (advice-remove 'elfeed-show-entry #'elfeed-ai--after-show-entry)
   (when (fboundp 'elfeed-tube-show)
     (advice-remove 'elfeed-tube-show #'elfeed-ai--after-elfeed-tube-show))
   (elfeed-ai--refresh-search))
@@ -964,6 +1051,8 @@ argument, prompt for the number of days."
   "Transient variable that displays only the budget type.")
 
 (cl-defmethod transient-format-value ((_obj elfeed-ai--budget-type-variable))
+  "Format the budget type value for display in transient.
+_OBJ is the transient infix object (unused)."
   (propertize (symbol-name (elfeed-ai--budget-type)) 'face 'transient-value))
 
 (transient-define-infix elfeed-ai--set-budget-type ()
@@ -983,6 +1072,8 @@ argument, prompt for the number of days."
   "Transient variable that displays only the budget limit.")
 
 (cl-defmethod transient-format-value ((_obj elfeed-ai--budget-limit-variable))
+  "Format the budget limit value for display in transient.
+_OBJ is an instance of `elfeed-ai--budget-limit-variable'."
   (propertize (pcase (elfeed-ai--budget-type)
                 ('tokens (format "%d" (elfeed-ai--budget-limit)))
                 ('dollars (format "$%.2f" (elfeed-ai--budget-limit))))
