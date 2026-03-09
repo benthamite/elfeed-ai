@@ -764,17 +764,10 @@ restored."
 ;;;; Display — show buffer
 
 (defun elfeed-ai--show-remove-summary ()
-  "Remove any previously injected AI summary from the show buffer."
-  (let ((inhibit-read-only t))
-    (save-excursion
-      (goto-char (point-min))
-      (let ((start (text-property-any (point-min) (point-max)
-                                      'elfeed-ai-summary t)))
-        (when start
-          (delete-region start
-                         (or (next-single-property-change
-                              start 'elfeed-ai-summary)
-                             (point-max))))))))
+  "Remove any previously injected AI summary overlay from the show buffer."
+  (dolist (ov (overlays-in (point-min) (point-max)))
+    (when (overlay-get ov 'elfeed-ai-summary)
+      (delete-overlay ov))))
 
 (defun elfeed-ai--after-elfeed-tube-show (&optional intended-entry)
   "Re-inject AI summary after elfeed-tube modifies the show buffer.
@@ -796,13 +789,14 @@ correct buffer and inject there."
               (elfeed-ai--show-inject-summary))))))))
 
 (defun elfeed-ai--show-inject-summary (&rest _)
-  "Inject AI summary at the top of the elfeed show buffer.
+  "Inject AI summary at the top of the elfeed show buffer via overlay.
+Uses `before-string' on a zero-width overlay so the summary is immune
+to async buffer modifications by shr image loading and elfeed-tube.
 Idempotent: removes any existing summary before inserting."
   (when-let* ((entry elfeed-show-entry)
               (summary (elfeed-meta entry :ai-summary))
               ((not (string-empty-p summary))))
-    (let ((inhibit-read-only t)
-          (score (elfeed-meta entry :ai-score))
+    (let ((score (elfeed-meta entry :ai-score))
           (cost (elfeed-meta entry :ai-cost)))
       (elfeed-ai--show-remove-summary)
       (save-excursion
@@ -810,27 +804,35 @@ Idempotent: removes any existing summary before inserting."
         ;; Find the blank line separating header from content.
         (when (re-search-forward "^$" nil t)
           (forward-line 1)
-          (let ((start (point)))
-            (insert
-             (propertize "AI Summary" 'face 'elfeed-ai-summary-heading-face)
-             (if score (format " (%.2f)" score) "")
-             (if cost (format " [$%.4f]" cost) "")
-             "\n\n"
-             summary
-             "\n\n"
-             ;; Width roughly matches a typical body column.
-             (propertize (make-string 60 ?─) 'face 'shadow)
-             "\n\n")
-            (put-text-property start (point) 'elfeed-ai-summary t)))))))
+          (let* ((pos (point))
+                 (text (concat
+                        (propertize "AI Summary"
+                                    'face 'elfeed-ai-summary-heading-face)
+                        (if score (format " (%.2f)" score) "")
+                        (if cost (format " [$%.4f]" cost) "")
+                        "\n\n"
+                        summary
+                        "\n\n"
+                        ;; Width roughly matches a typical body column.
+                        (propertize (make-string 60 ?─) 'face 'shadow)
+                        "\n\n"))
+                 (ov (make-overlay pos pos)))
+            (overlay-put ov 'elfeed-ai-summary t)
+            (overlay-put ov 'before-string text)))))))
+
+(defun elfeed-ai--show-summary-overlay-p ()
+  "Return non-nil if a summary overlay exists in the current buffer."
+  (cl-some (lambda (ov) (overlay-get ov 'elfeed-ai-summary))
+           (overlays-in (point-min) (point-max))))
 
 (defun elfeed-ai--after-show-entry (entry)
-  "Schedule repeated AI summary injection checks for ENTRY.
-Async image loading (shr) and elfeed-tube data fetching can modify
-the show buffer after the initial rendering, removing the injected
-summary.  Multiple checks at staggered intervals ensure the
-summary is re-injected whenever it goes missing."
+  "Schedule AI summary injection checks for ENTRY.
+The overlay approach is resilient to async buffer modifications,
+but the summary may not yet exist when the buffer is first shown
+\(scoring is async).  A few staggered checks ensure it appears
+once scoring completes."
   (when elfeed-ai-mode
-    (dolist (delay '(0 0.5 1 2 5 10))
+    (dolist (delay '(0 0.5 2 10))
       (run-at-time delay nil
         (lambda ()
           (when-let ((buf (get-buffer (elfeed-show--buffer-name entry))))
@@ -840,9 +842,7 @@ summary is re-injected whenever it goes missing."
                            (elfeed-meta entry :ai-summary)
                            (not (string-empty-p
                                  (elfeed-meta entry :ai-summary)))
-                           (not (text-property-any
-                                 (point-min) (point-max)
-                                 'elfeed-ai-summary t)))
+                           (not (elfeed-ai--show-summary-overlay-p)))
                   (elfeed-ai--show-inject-summary))))))))))
 
 ;;;; Minor mode
