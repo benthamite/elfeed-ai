@@ -67,7 +67,7 @@ Emacs 29.1 or later.
 #+begin_src emacs-lisp
 (require 'elfeed-ai)
 
-(setq elfeed-ai-interest-profile
+(setopt elfeed-ai-interest-profile
       "AI safety, Emacs, functional programming, philosophy of mind,
        effective altruism, longevity research")
 

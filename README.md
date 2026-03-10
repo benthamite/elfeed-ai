@@ -43,7 +43,7 @@ Requires Emacs 29.1 or later, plus [elfeed](https://github.com/skeeto/elfeed) (3
 ```emacs-lisp
 (require 'elfeed-ai)
 
-(setq elfeed-ai-interest-profile
+(setopt elfeed-ai-interest-profile
       "<a description of your interests>")
 
 (elfeed-ai-mode 1)
