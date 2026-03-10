@@ -249,6 +249,11 @@ Applied when the score is at or below `elfeed-ai-score-low-threshold'."
   "Face for the AI summary heading in the show buffer."
   :group 'elfeed-ai)
 
+(defface elfeed-ai-summary-body-face
+  '((t :inherit default))
+  "Face for the AI summary body text in the show buffer."
+  :group 'elfeed-ai)
+
 ;;;; Internal state
 
 (defvar elfeed-ai--pending-queue nil
@@ -812,10 +817,14 @@ remove it.  Idempotent: removes any existing summary before inserting."
                  (text (concat
                         (propertize "AI Summary"
                                     'face 'elfeed-ai-summary-heading-face)
-                        (if score (format " (%.2f)" score) "")
-                        (if cost (format " [$%.4f]" cost) "")
+                        (propertize
+                         (concat
+                          (if score (format " (%.2f)" score) "")
+                          (if cost (format " [$%.4f]" cost) ""))
+                         'face 'elfeed-ai-summary-heading-face)
                         "\n\n"
-                        summary
+                        (propertize summary
+                                    'face 'elfeed-ai-summary-body-face)
                         "\n\n"
                         ;; Width roughly matches a typical body column.
                         (propertize (make-string 60 ?─) 'face 'shadow)
